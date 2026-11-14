@@ -17,7 +17,7 @@
   const S = {
     clave: LS.get('gc-clave') || '',
     quien: LS.get('gc-quien') || '',
-    config: { nombre: 'Mi cabaña', tc: 40, catGasto: [], catIngreso: [], personas: [] },
+    config: { nombre: 'Mi cabaña', logo: '', color: '#2f6b3a', tc: 40, catGasto: [], catIngreso: [], personas: [] },
     movs: [], animales: [], cargado: false
   };
 
@@ -31,6 +31,45 @@
     tAviso = setTimeout(() => el.classList.add('oculto'), error ? 5000 : 2200);
   }
   const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+  // ---------- marca (nombre, logo y color del establecimiento) ----------
+  function mezcla(hex, con, k) { // mezcla un color con blanco o negro
+    const n = parseInt(hex.slice(1), 16), t = con === 'negro' ? 0 : 255;
+    const ch = [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(v + (t - v) * k));
+    return '#' + ch.map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+  function aplicarMarca(m) {
+    const color = /^#[0-9a-f]{6}$/i.test(m.color || '') ? m.color : '#2f6b3a';
+    const r = document.documentElement.style;
+    r.setProperty('--verde', color); r.setProperty('--verde-osc', mezcla(color, 'negro', 0.35)); r.setProperty('--verde-cl', mezcla(color, 'blanco', 0.88));
+    const nombre = m.nombre || 'Mi cabaña';
+    $('#marca').innerHTML = (m.logo ? '<img class="logo-top" alt="" src="' + m.logo + '">' : '🐂 ') + '<span>' + esc(nombre) + '</span>';
+    document.title = nombre;
+    const tm = document.querySelector('meta[name=theme-color]'); if (tm) tm.content = color;
+    try { localStorage.setItem('gc-marca', JSON.stringify({ nombre, logo: m.logo || '', color })); } catch (e) { /* nada */ }
+  }
+  function marcaGuardada() { try { return JSON.parse(localStorage.getItem('gc-marca') || 'null'); } catch (e) { return null; } }
+  async function cargarMarcaPublica() {
+    try { const r = await fetch('/.netlify/functions/config?publico=1'); const j = await r.json(); if (j.marca) { aplicarMarca(j.marca); return j.marca; } } catch (e) { /* sin red: queda la guardada */ }
+    return null;
+  }
+  function logoAData(file) { // achica el logo (mantiene transparencia) para guardarlo en los ajustes
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        let d = c.toDataURL('image/png');
+        if (d.length > 200000) d = c.toDataURL('image/jpeg', 0.85);
+        resolve(d);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer el logo')); };
+      img.src = url;
+    });
+  }
 
   // ---------- servidor ----------
   async function api(fn, body) {
@@ -59,8 +98,7 @@
   async function cargarTodo() {
     const [c, m, a] = await Promise.all([api('config'), api('movs'), api('animales')]);
     S.config = c.config; S.movs = m.movs; S.animales = a.animales; S.cargado = true;
-    $('#marca').textContent = '🐂 ' + S.config.nombre;
-    document.title = S.config.nombre;
+    aplicarMarca(S.config);
   }
 
   function cerrarSesion(msg) {
@@ -124,7 +162,8 @@
   // ---------- entrada ----------
   function pantallaEntrada(msg) {
     $('#top-der').innerHTML = '';
-    app.innerHTML = '<h1>🐂 Gestión de la cabaña</h1>' +
+    const mg = marcaGuardada() || {};
+    app.innerHTML = '<div class="entrada-marca">' + (mg.logo ? '<img class="logo-grande" alt="" src="' + mg.logo + '">' : '<div class="ico-grande">🐂</div>') + '<h1>' + esc(mg.nombre || 'Gestión de la cabaña') + '</h1></div>' +
       '<div class="tarjeta"><p>Ingresá la clave de la familia para entrar.</p>' +
       (msg ? '<p class="neg">' + esc(msg) + '</p>' : '') +
       '<form id="f-entrada">' +
@@ -531,6 +570,8 @@
     app.innerHTML = encabezado('Ajustes', '#inicio') +
       '<form id="f-aj">' +
       '<label class="campo">Nombre del establecimiento<input id="j-nombre" type="text" value="' + esc(c.nombre) + '"></label>' +
+      '<div class="campo">Logo (opcional)<div class="logo-edit"><div id="j-logoprev"></div><label class="btn-foto"><input type="file" id="j-logo" accept="image/*"><span>🖼️ Elegir el logo</span></label></div></div>' +
+      '<div class="campo">Color de la app<div class="chips" id="j-colores"></div><label class="campo" style="margin-top:8px">O elegí otro color<input type="color" id="j-color" value="' + esc(c.color || '#2f6b3a') + '" style="height:46px;padding:2px"></label></div>' +
       '<label class="campo">Tipo de cambio (pesos por dólar) para los resultados "todo en una moneda"<input id="j-tc" type="text" inputmode="decimal" value="' + esc(String(c.tc).replace('.', ',')) + '"></label>' +
       '<label class="campo">Tipos de gasto (uno por línea)<textarea id="j-cg" style="min-height:170px">' + esc(c.catGasto.join('\n')) + '</textarea></label>' +
       '<label class="campo">Tipos de ingreso (uno por línea)<textarea id="j-ci" style="min-height:110px">' + esc(c.catIngreso.join('\n')) + '</textarea></label>' +
@@ -541,6 +582,21 @@
       '<h2>Esta sesión</h2><p class="nota">Cargás como: <b>' + esc(S.quien || '(sin nombre)') + '</b></p>' +
       '<button class="btn sec" type="button" id="j-nombre-q">Cambiar mi nombre</button>' +
       '<button class="btn peligro" type="button" id="j-salir">Salir y olvidar la clave en este teléfono</button>';
+    const est = { logo: c.logo || '', color: c.color || '#2f6b3a' };
+    const PRESET = [['Verde campo', '#2f6b3a'], ['Oliva', '#6b7340'], ['Marrón', '#5a4636'], ['Azul', '#2f4f7a'], ['Bordó', '#7a2f3a'], ['Gris', '#4a5560']];
+    function pintarMarcaAj() {
+      $('#j-logoprev').innerHTML = est.logo ? '<img class="logo-prev" alt="Logo" src="' + est.logo + '"><br><button type="button" class="btn sec mini" id="j-logoq" style="margin-top:6px">Quitar el logo</button>' : '<span class="nota">Sin logo</span>';
+      const q = $('#j-logoq'); if (q) q.onclick = () => { est.logo = ''; pintarMarcaAj(); };
+      $('#j-colores').innerHTML = PRESET.map(p => '<button type="button" class="chip sm' + (est.color.toLowerCase() === p[1] ? ' on' : '') + '" data-c="' + p[1] + '"><i class="punto" style="background:' + p[1] + '"></i>' + p[0] + '</button>').join('');
+      app.querySelectorAll('#j-colores .chip').forEach(b => { b.onclick = () => { est.color = b.dataset.c; $('#j-color').value = est.color; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); }; });
+    }
+    pintarMarcaAj();
+    $('#j-color').oninput = ev => { est.color = ev.target.value; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); };
+    $('#j-logo').onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      try { est.logo = await logoAData(f); pintarMarcaAj(); aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); } catch (e) { aviso(e.message, true); }
+      ev.target.value = '';
+    };
     $('#f-aj').onsubmit = async ev => {
       ev.preventDefault();
       const err = $('#j-error'); err.textContent = '';
@@ -549,8 +605,8 @@
       const lineas = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
       const btn = $('#j-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
       try {
-        const r = await api('config', { config: { nombre: $('#j-nombre').value, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: c.personas } });
-        S.config = r.config; $('#marca').textContent = '🐂 ' + S.config.nombre; document.title = S.config.nombre;
+        const r = await api('config', { config: { nombre: $('#j-nombre').value, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: c.personas } });
+        S.config = r.config; aplicarMarca(S.config);
         aviso('Ajustes guardados ✅'); location.hash = '#inicio';
       } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Guardar los ajustes'; }
     };
@@ -686,5 +742,7 @@
     }
   }
   window.addEventListener('hashchange', enrutar);
+  const mg0 = marcaGuardada(); if (mg0) aplicarMarca(mg0);
   enrutar();
+  if (!S.clave) cargarMarcaPublica().then(m => { if (m && !S.clave && !$('#e-clave').value) pantallaEntrada(); });
 })();
