@@ -178,8 +178,9 @@
       '<a class="grande g-gasto" href="#gasto"><span class="ico">🧾</span>Cargar un gasto</a>' +
       '<a class="grande g-ingreso" href="#ingreso"><span class="ico">💰</span>Cargar un ingreso</a>' +
       '<a class="grande g-animal" href="#animales"><span class="ico">🐂</span>Animales</a>' +
-      '<a class="grande g-result" href="#resultados"><span class="ico">📊</span>Resultados</a></div>' +
-      '<div class="grilla" style="margin-top:12px"><a class="grande g-sec" href="#movs">📋 Ver todos los movimientos</a>' +
+      '<a class="grande g-result" href="#panel"><span class="ico">📈</span>Panel</a></div>' +
+      '<div class="grilla" style="margin-top:12px"><a class="grande g-sec" href="#resultados">📊 Resultados en detalle</a><a class="grande g-sec" href="#movs">📋 Ver todos los movimientos</a></div>' +
+      '<div class="grilla" style="margin-top:12px">' +
       '<a class="grande g-sec" href="#ajustes">⚙️ Ajustes</a></div>' +
       '<a class="btn sec" href="#ayuda" style="margin-top:12px">❓ Cómo se usa esta app</a>' +
       '<h2>Este mes (' + esc(G.mesLargo(G.hoy().slice(0, 7))) + ')</h2>' +
@@ -559,19 +560,102 @@
   }
 
 
+  // ---------- panel gráfico ----------
+  const estP = { periodo: 'anio' };
+  const COLORES = ['#2f6b3a', '#a8742a', '#3d5a80', '#b3402f', '#7a9e7e', '#d4a24c', '#6b7fa3', '#c97b6b', '#8a8a7a'];
+  function donaSVG(lista) {
+    let acum = 0;
+    const arcos = lista.map((c, i) => {
+      const pct = c.pct * 100;
+      const a = '<circle r="15.915" cx="21" cy="21" fill="none" stroke="' + COLORES[i % COLORES.length] + '" stroke-width="7" stroke-dasharray="' + pct.toFixed(3) + ' ' + (100 - pct).toFixed(3) + '" stroke-dashoffset="' + (25 - acum).toFixed(3) + '"/>';
+      acum += pct; return a;
+    }).join('');
+    return '<svg viewBox="0 0 42 42" class="dona" role="img" aria-label="Gastos por rubro"><circle r="15.915" cx="21" cy="21" fill="none" stroke="#ece9df" stroke-width="7"/>' + arcos + '</svg>';
+  }
+  function pantallaPanel() {
+    const hayUSD = S.movs.some(m => m.moneda === 'USD'), hayUYU = S.movs.some(m => m.moneda === 'UYU');
+    if (!estR.vista) estR.vista = hayUSD && hayUYU ? 'TODO_UYU' : hayUSD ? 'USD' : 'UYU';
+    app.innerHTML = encabezado('Panel', '#inicio') +
+      '<div class="chips" id="p-per"></div>' +
+      '<label class="campo">Ver en<select id="p-vista"></select></label><div id="p-cuerpo"></div>' +
+      '<a class="btn sec" href="#resultados">Ver el detalle completo en Resultados</a>';
+    const pers = [['mes', 'Este mes'], ['anio', 'Este año'], ['12m', 'Últimos 12 meses'], ['todo', 'Todo']];
+    const vistas = [['UYU', 'Solo pesos ($)'], ['USD', 'Solo dólares (US$)'], ['TODO_UYU', 'Todo en pesos (convertido)'], ['TODO_USD', 'Todo en dólares (convertido)']];
+    $('#p-vista').innerHTML = vistas.map(v => '<option value="' + v[0] + '"' + (v[0] === estR.vista ? ' selected' : '') + '>' + v[1] + '</option>').join('');
+    $('#p-vista').onchange = ev => { estR.vista = ev.target.value; pintar(); };
+    function pintar() {
+      $('#p-per').innerHTML = pers.map(p => '<button type="button" class="chip sm' + (estP.periodo === p[0] ? ' on' : '') + '" data-p="' + p[0] + '">' + p[1] + '</button>').join('');
+      app.querySelectorAll('#p-per .chip').forEach(b => { b.onclick = () => { estP.periodo = b.dataset.p; pintar(); }; });
+      const tc = S.config.tc, v = estR.vista, mon = G.monedaDeVista(v), f = n => G.fmtMonto(n, mon);
+      const per = G.periodo(estP.periodo);
+      const movs = S.movs.filter(m => G.enPeriodo(m, per));
+      const cuerpo = $('#p-cuerpo');
+      const res = G.resumen(movs, v, tc);
+      if (!res.n) { cuerpo.innerHTML = '<p class="nota" style="margin-top:14px">Todavía no hay movimientos en este período' + (v === 'UYU' || v === 'USD' ? ' en esa moneda' : '') + '.</p>'; return; }
+      // comparación con el período anterior equivalente
+      const prevNombre = { mes: 'mes-anterior', anio: 'anio-anterior' }[estP.periodo];
+      let comp = '';
+      if (prevNombre) {
+        const rp = G.resumen(S.movs.filter(m => G.enPeriodo(m, G.periodo(prevNombre))), v, tc);
+        if (rp.n) {
+          const d = res.resultado - rp.resultado;
+          comp = '<div class="comp ' + (d >= 0 ? 'pos' : 'neg') + '">' + (d >= 0 ? '▲ ' : '▼ ') + esc(f(Math.abs(d))) + ' ' + (d >= 0 ? 'mejor' : 'peor') + ' que el ' + (estP.periodo === 'mes' ? 'mes anterior' : 'año anterior') + '</div>';
+        }
+      }
+      const pos = res.resultado >= 0;
+      const tot = res.ingresos + res.gastos;
+      const pI = tot ? Math.round(res.ingresos / tot * 100) : 0;
+      const cg = G.porCategoria(movs, 'gasto', v, tc);
+      const top = cg.slice(0, 6), resto = cg.slice(6);
+      if (resto.length) top.push({ categoria: 'Otros rubros', total: resto.reduce((a, c) => a + c.total, 0), pct: resto.reduce((a, c) => a + c.pct, 0) });
+      const pm = G.porMes(movs, v, tc);
+      const pa = G.porAnimal(movs, S.animales, v, tc).slice().sort((a, b) => b.resultado - a.resultado);
+      const maxA = Math.max(1, ...pa.map(x => Math.abs(x.resultado)));
+      // barras mes a mes (SVG)
+      let barras = '';
+      if (pm.length > 1) {
+        const W = 340, H = 150, base = 130, n = pm.length, ancho = W / n;
+        const mx = Math.max(1, ...pm.map(x => Math.max(x.gastos, x.ingresos)));
+        const bw = Math.min(16, ancho * 0.36);
+        barras = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="grafico" role="img" aria-label="Ingresos y gastos mes a mes">' +
+          '<line x1="0" y1="' + base + '" x2="' + W + '" y2="' + base + '" stroke="#d9d6cb"/>' +
+          pm.map((x, i) => {
+            const cx = ancho * i + ancho / 2, hi = Math.round(x.ingresos / mx * 105), hg = Math.round(x.gastos / mx * 105);
+            return '<rect x="' + (cx - bw - 1) + '" y="' + (base - hi) + '" width="' + bw + '" height="' + hi + '" rx="3" fill="#2f6b3a"/>' +
+              '<rect x="' + (cx + 1) + '" y="' + (base - hg) + '" width="' + bw + '" height="' + hg + '" rx="3" fill="#b3402f"/>' +
+              (n <= 6 || i % 2 === 0 ? '<text x="' + cx + '" y="146" text-anchor="middle" font-size="9" fill="#6a7468">' + esc(G.mesTexto(x.mes)) + '</text>' : '');
+          }).join('') + '</svg>' +
+          '<div class="leyenda"><b style="color:#2f6b3a">■</b> Ingresos &nbsp; <b style="color:#b3402f">■</b> Gastos</div>';
+      }
+      cuerpo.innerHTML =
+        '<div class="hero ' + (pos ? 'bien' : 'mal') + '"><small>' + (pos ? 'Ganancia del período' : 'Pérdida del período') + '</small><b>' + esc(f(res.resultado)) + '</b>' + comp + '</div>' +
+        '<div class="tarjeta"><div class="cifras"><div class="cifra"><small>Entró</small><b class="pos">' + esc(f(res.ingresos)) + '</b></div><div class="cifra"><small>Salió</small><b class="neg">' + esc(f(res.gastos)) + '</b></div></div>' +
+        '<div class="dosbarra" title="Ingresos vs gastos"><i style="width:' + pI + '%"></i></div><div class="nota" style="display:flex;justify-content:space-between"><span>Ingresos ' + pI + '%</span><span>Gastos ' + (100 - pI) + '%</span></div></div>' +
+        (top.length ? '<h2>En qué se va la plata</h2><div class="tarjeta"><div class="dona-fila">' + donaSVG(top) + '<div class="dona-leyenda">' +
+          top.map((c, i) => '<div><i style="background:' + COLORES[i % COLORES.length] + '"></i><span>' + esc(c.categoria) + '</span><b>' + Math.round(c.pct * 100) + '%</b></div>').join('') + '</div></div></div>' : '') +
+        (barras ? '<h2>Mes a mes</h2><div class="tarjeta">' + barras + '</div>' : '') +
+        (pa.length ? '<h2>Cómo le fue a cada animal</h2><div class="tarjeta">' + pa.slice(0, 8).map(x =>
+          '<a class="ani-fila" href="#animal/' + esc(x.animalId) + '"><div class="t"><span>' + esc(x.animal.nombre) + '</span><b class="' + (x.resultado >= 0 ? 'pos' : 'neg') + '">' + esc(f(x.resultado)) + '</b></div>' +
+          '<div class="barra ' + (x.resultado >= 0 ? 'ing' : '') + '"><i style="width:' + Math.max(3, Math.round(Math.abs(x.resultado) / maxA * 100)) + '%"></i></div></a>').join('') + '</div>' : '') +
+        (v.indexOf('TODO') === 0 ? '<p class="nota">Convertido a ' + (mon === 'USD' ? 'dólares' : 'pesos') + ' con un tipo de cambio de ' + esc(G.fmtNum(tc, 2)) + ' (se cambia en Ajustes).</p>' : '');
+    }
+    pintar();
+  }
+
   // ---------- ayuda ----------
   function pantallaAyuda() {
     LS.set('gc-ayuda-vista', '1');
     const paso = (ico, tit, txt) => '<div class="tarjeta"><h2 style="margin-top:0">' + ico + ' ' + tit + '</h2>' + txt + '</div>';
     app.innerHTML = encabezado('Cómo se usa esta app', '#inicio') +
       '<p class="nota">Una guía corta para empezar. Podés volver acá cuando quieras tocando el ❓ de arriba.</p>' +
-      paso('🏠', 'La pantalla de inicio', '<p>Tiene cuatro botones grandes: <b>Cargar un gasto</b>, <b>Cargar un ingreso</b>, <b>Animales</b> y <b>Resultados</b>. Abajo se ve cómo viene el mes y lo último que se cargó.</p>') +
+      paso('🏠', 'La pantalla de inicio', '<p>Tiene cuatro botones grandes: <b>Cargar un gasto</b>, <b>Cargar un ingreso</b>, <b>Animales</b> y <b>Panel</b>. Abajo se ve cómo viene el mes y lo último que se cargó.</p>') +
       paso('🧾', 'Cargar un gasto', '<ol><li>Tocá <b>Cargar un gasto</b>.</li><li>Escribí el <b>monto</b> (con coma para los centavos: 1250,50).</li><li>Elegí si es en <b>pesos</b> o en <b>dólares</b>.</li><li>Tocá <b>en qué fue</b> (alimentación, sanidad, etc.).</li><li>Si querés, escribí el proveedor y un detalle, y sacale una <b>foto al comprobante</b>.</li><li>Tocá <b>Guardar</b>. Aparece el tilde verde ✅.</li></ol><p class="nota">Lo único obligatorio es el monto y en qué fue. La fecha viene puesta con la de hoy: si el gasto fue otro día, cambiala.</p>') +
       paso('💰', 'Cargar un ingreso', '<p>Igual que un gasto, pero con el botón <b>Cargar un ingreso</b>: ventas de animales, premios de exposiciones, servicios, etc.</p>') +
       paso('🐂', 'Gastos de un animal en particular', '<p>En el gasto o ingreso aparece la pregunta <b>"¿Es para un animal en particular?"</b>. Si elegís uno, después se ve cuánto costó y cuánto dejó ese animal. Si es un gasto de todo el campo, dejalo en "No, es un gasto general".</p><p>Si cargás la <b>venta</b> de un animal, la app pregunta si lo marca como vendido.</p>') +
       paso('📋', 'Animales', '<p>Tocá <b>Animales → Agregar un animal</b> y completá nombre, especie y lo que sepas (caravana, raza, nacimiento, foto). Tocando un animal se ven sus gastos e ingresos y se puede cambiar su estado: en el campo, vendido o fallecido.</p>') +
       paso('✏️', 'Me equivoqué, ¿cómo lo corrijo?', '<p>Entrá a <b>Ver todos los movimientos</b>, tocá el que querés cambiar y corregilo, o tocá <b>Eliminar</b> al final. Se puede buscar por palabra o filtrar por mes.</p>') +
-      paso('📊', 'Resultados', '<p>Elegí el período (este mes, este año, últimos 12 meses…) y se ve cuánto entró, cuánto salió y el <b>resultado</b>. Más abajo: en qué se gasta más, de dónde vienen los ingresos, mes a mes y el resultado de cada animal.</p><p>Si hay pesos y dólares, se puede ver todo convertido a una sola moneda. El tipo de cambio se ajusta en <b>Ajustes</b>.</p>') +
+      paso('📈', 'El Panel', '<p>Es la pantalla para ver cómo viene todo de un vistazo: si hay ganancia o pérdida, en qué se va la plata, cómo fue cada mes y cómo le fue a cada animal. Elegí arriba el período que querés mirar.</p>') +
+      paso('📊', 'Resultados en detalle', '<p>Elegí el período (este mes, este año, últimos 12 meses…) y se ve cuánto entró, cuánto salió y el <b>resultado</b>. Más abajo: en qué se gasta más, de dónde vienen los ingresos, mes a mes y el resultado de cada animal.</p><p>Si hay pesos y dólares, se puede ver todo convertido a una sola moneda. El tipo de cambio se ajusta en <b>Ajustes</b>.</p>') +
       paso('📱', 'Dejarla como una app en el celular', '<p>En Safari tocá el botón de <b>Compartir</b> (el cuadrado con la flecha) y elegí <b>Agregar a pantalla de inicio</b>. Así se abre con un toque, como cualquier app.</p>') +
       paso('🔑', 'Entrar y salir', '<p>La clave se pide una sola vez en cada celular. Todos los que cargan usan la misma clave, pero cada uno pone <b>su nombre</b> para saber quién anotó cada cosa. Si algo no carga, revisá que haya señal e intentá de nuevo: no se pierde lo ya guardado.</p>') +
       paso('💾', 'Copia de seguridad', '<p>En <b>Ajustes</b> hay un botón para descargar una copia de todo. Conviene hacerla de vez en cuando y guardarla en el Drive.</p>') +
@@ -597,6 +681,7 @@
       case 'resultados': pantallaResultados(); break;
       case 'ajustes': pantallaAjustes(); break;
       case 'ayuda': pantallaAyuda(); break;
+      case 'panel': pantallaPanel(); break;
       default: pantallaInicio();
     }
   }

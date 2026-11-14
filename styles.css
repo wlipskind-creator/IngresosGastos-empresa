@@ -91,3 +91,23 @@ table.t th:first-child, table.t td:first-child { text-align: left; }
 .ok-grande { text-align: center; padding: 28px 10px; }
 .ok-grande .tilde { font-size: 3.2rem; }
 @media (min-width: 700px) { .grilla.cuatro { grid-template-columns: repeat(4, 1fr); } }
+
+/* panel gráfico */
+.hero { border-radius: var(--r); padding: 20px 16px; text-align: center; color: #fff; margin: 14px 0; }
+.hero.bien { background: linear-gradient(135deg, #2f6b3a, #4a8a55); }
+.hero.mal { background: linear-gradient(135deg, #b3402f, #c9604f); }
+.hero small { display: block; opacity: .9; font-size: .95rem; }
+.hero b { display: block; font-size: 2.1rem; margin: 4px 0; letter-spacing: -.5px; }
+.hero .comp { background: rgba(255,255,255,.2); border-radius: 999px; display: inline-block; padding: 4px 12px; font-size: .88rem; }
+.dosbarra { height: 14px; border-radius: 999px; background: var(--rojo); overflow: hidden; margin: 12px 0 6px; }
+.dosbarra i { display: block; height: 100%; background: var(--verde); }
+.dona-fila { display: flex; align-items: center; gap: 14px; }
+.dona { width: 128px; height: 128px; flex: none; }
+.dona-leyenda { flex: 1; min-width: 0; font-size: .92rem; }
+.dona-leyenda div { display: flex; align-items: center; gap: 7px; padding: 3px 0; }
+.dona-leyenda i { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.dona-leyenda span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grafico { width: 100%; height: auto; display: block; }
+.ani-fila { display: block; text-decoration: none; color: inherit; padding: 6px 0; }
+.ani-fila .t { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.hero .comp, .hero .comp.pos, .hero .comp.neg { color: #fff; }
