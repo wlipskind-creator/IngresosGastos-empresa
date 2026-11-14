@@ -169,12 +169,13 @@
     return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   // Movimientos en CSV (separador ";", coma decimal: se abre bien en Excel en español).
-  function aCsv(movs, animales) {
+  function aCsv(movs, animales, lotes) {
     const nom = new Map(animales.map(a => [a.id, a.nombre]));
-    const filas = [['Fecha', 'Tipo', 'Categoría', 'Detalle', 'Proveedor / Comprador', 'Animal', 'Moneda', 'Monto', 'Cargó']];
+    const lot = new Map((lotes || []).map(x => [x.id, x.nombre]));
+    const filas = [['Fecha', 'Tipo', 'Categoría', 'Detalle', 'Proveedor / Comprador', 'Animal', 'Lote', 'Moneda', 'Monto', 'Cargó']];
     for (const m of movs.slice().sort((a, b) => (a.fecha < b.fecha ? -1 : 1))) {
       filas.push([m.fecha, m.tipo === 'gasto' ? 'Gasto' : 'Ingreso', m.categoria, m.detalle, m.contraparte,
-        nom.get(m.animalId) || '', m.moneda, String(m.monto).replace('.', ','), m.por]);
+        nom.get(m.animalId) || '', lot.get(m.loteId) || '', m.moneda, String(m.monto).replace('.', ','), m.por]);
     }
     return '﻿' + filas.map(f => f.map(csvCelda).join(';')).join('\r\n');
   }
@@ -246,7 +247,41 @@
     return 'Nº ' + (it.largo ? it.norm.slice(-6) : it.numero);
   }
 
-  const api = { normCaravana, leerLecturas, buscarDuplicado, nombreDeLectura, parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
+  // ---- Lotes (invernada) ----
+  function diasEntre(a, b) {
+    const t = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    return Math.round((t(b) - t(a)) / 86400000);
+  }
+  // Números de un lote: resultado, costo por kilo ganado, ganancia diaria, etc.
+  // El costo por kilo ganado NO incluye la compra de la hacienda (rubros que dicen "compra").
+  function indicadoresLote(lote, movs, vista, tc, hoyStr) {
+    let ing = 0, gas = 0, gasSinCompra = 0, n = 0;
+    for (const m of movs) {
+      if (m.loteId !== lote.id) continue;
+      const v = valor(m, vista, tc);
+      if (v === null) continue;
+      n++;
+      if (m.tipo === 'ingreso') ing += v;
+      else { gas += v; if (!/compra/i.test(m.categoria)) gasSinCompra += v; }
+    }
+    const cab = lote.cantidadActual || lote.cantidad;
+    const pes = lote.pesadas || [];
+    const ult = pes.length ? pes[pes.length - 1] : null;
+    const fin = lote.estado === 'Cerrado' && lote.fechaCierre ? lote.fechaCierre : (hoyStr || hoy());
+    const diasCampo = lote.fechaEntrada ? Math.max(0, diasEntre(lote.fechaEntrada, fin)) : null;
+    let kgGanadosCab = null, gdp = null, kgProd = null, costoKg = null;
+    if (ult && lote.pesoEntrada > 0) {
+      kgGanadosCab = ult.pesoProm - lote.pesoEntrada;
+      const d = lote.fechaEntrada ? diasEntre(lote.fechaEntrada, ult.fecha) : 0;
+      if (d > 0) gdp = kgGanadosCab / d;
+      kgProd = kgGanadosCab * cab;
+      if (kgProd > 0) costoKg = gasSinCompra / kgProd;
+    }
+    return { n, ingresos: r2(ing), gastos: r2(gas), resultado: r2(ing - gas), gastosSinCompra: r2(gasSinCompra), cabezas: cab,
+      margenCabeza: cab ? r2((ing - gas) / cab) : null, ult, diasCampo, kgGanadosCab, gdp, kgProd, costoKg };
+  }
+
+  const api = { diasEntre, indicadoresLote, normCaravana, leerLecturas, buscarDuplicado, nombreDeLectura, parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
     fmtNum, fmtMonto, fechaCorta, mesTexto, mesLargo, aCsv, cantidadMeses };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Gestion = api;

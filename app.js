@@ -18,7 +18,7 @@
     clave: LS.get('gc-clave') || '',
     quien: LS.get('gc-quien') || '',
     config: { nombre: 'Mi cabaña', logo: '', color: '#2f6b3a', tc: 40, catGasto: [], catIngreso: [], personas: [] },
-    movs: [], animales: [], cargado: false
+    movs: [], animales: [], lotes: [], cargado: false
   };
 
   // ---------- avisos ----------
@@ -96,8 +96,8 @@
   }
 
   async function cargarTodo() {
-    const [c, m, a] = await Promise.all([api('config'), api('movs'), api('animales')]);
-    S.config = c.config; S.movs = m.movs; S.animales = a.animales; S.cargado = true;
+    const [c, m, a, lo] = await Promise.all([api('config'), api('movs'), api('animales'), api('lotes')]);
+    S.config = c.config; S.movs = m.movs; S.animales = a.animales; S.lotes = lo.lotes; S.cargado = true;
     aplicarMarca(S.config);
   }
 
@@ -115,6 +115,8 @@
   }
   const animalPorId = id => S.animales.find(a => a.id === id);
   const nombreAnimal = id => { const a = animalPorId(id); return a ? a.nombre : ''; };
+  const lotePorId = id => S.lotes.find(l => l.id === id);
+  const nombreLote = id => { const l = lotePorId(id); return l ? l.nombre : ''; };
   function monto(m) { return G.fmtMonto(m.monto, m.moneda, m.monto >= 1000 ? 0 : 2); }
 
   function abrirVisor(src) {
@@ -204,7 +206,7 @@
     return lista.map(m =>
       '<a class="mov" href="#mov/' + esc(m.id) + '"><div class="izq"><div class="cat">' + esc(m.categoria) + '</div>' +
       '<div class="sub">' + esc(G.fechaCorta(m.fecha)) + (m.detalle ? ' · ' + esc(m.detalle) : '') + (m.contraparte ? ' · ' + esc(m.contraparte) : '') +
-      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + (m.por ? ' · 👤 ' + esc(m.por) : '') + '</div></div>' +
+      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + (S.config.usaLotes && m.loteId && nombreLote(m.loteId) ? ' · 📦 ' + esc(nombreLote(m.loteId)) : '') + (m.por ? ' · 👤 ' + esc(m.por) : '') + '</div></div>' +
       (m.fotoId ? '<img class="miniatura" alt="" loading="lazy" src="' + urlFoto(m.fotoId, m.fs, true) + '">' : '') +
       '<div class="imp ' + (m.tipo === 'gasto' ? 'g' : 'i') + '">' + (m.tipo === 'gasto' ? '−' : '+') + esc(monto(m)) + '</div></a>').join('');
   }
@@ -221,6 +223,7 @@
       '<div class="grilla" style="margin-top:12px"><a class="grande g-sec" href="#resultados">📊 Resultados en detalle</a><a class="grande g-sec" href="#movs">📋 Ver todos los movimientos</a></div>' +
       '<div class="grilla" style="margin-top:12px">' +
       '<a class="grande g-sec" href="#ajustes">⚙️ Ajustes</a></div>' +
+      (S.config.usaLotes ? '<a class="grande g-animal" href="#lotes" style="margin-top:12px;display:block"><span class="ico">📦</span>Lotes de hacienda</a>' : '') +
       '<a class="btn sec" href="#ayuda" style="margin-top:12px">❓ Cómo se usa esta app</a>' +
       '<h2>Este mes (' + esc(G.mesLargo(G.hoy().slice(0, 7))) + ')</h2>' +
       (res.length ? res.map(x => '<div class="tarjeta"><div class="nota">' + (x.mon === 'USD' ? 'Dólares' : 'Pesos') + '</div><div class="cifras">' +
@@ -232,11 +235,11 @@
   }
 
   // ---------- cargar / editar un movimiento ----------
-  function pantallaMov(tipo, mov, animalPre) {
+  function pantallaMov(tipo, mov, animalPre, lotePre) {
     const edit = !!mov;
     const esGasto = tipo === 'gasto';
     const cats = esGasto ? S.config.catGasto : S.config.catIngreso;
-    const m = mov || { id: nuevoId(), tipo, fecha: G.hoy(), monto: '', moneda: LS.get('gc-moneda') || 'UYU', categoria: '', detalle: '', contraparte: '', animalId: animalPre || '', fotoId: '' };
+    const m = mov || { id: nuevoId(), tipo, fecha: G.hoy(), monto: '', moneda: LS.get('gc-moneda') || 'UYU', categoria: '', detalle: '', contraparte: '', animalId: animalPre || '', loteId: lotePre || '', fotoId: '' };
     const est = { moneda: m.moneda, categoria: m.categoria, fotoId: m.fotoId, fs: m.fs || '', fotoNueva: null, guardando: false };
     const contrapartes = Array.from(new Set(S.movs.filter(x => x.tipo === tipo && x.contraparte).map(x => x.contraparte))).slice(0, 60);
     const animalesOpc = S.animales.slice().sort((a, b) => (a.estado === 'Activo' ? 0 : 1) - (b.estado === 'Activo' ? 0 : 1) || a.nombre.localeCompare(b.nombre));
@@ -250,6 +253,8 @@
       '<label class="campo">' + (esGasto ? 'Proveedor o lugar de la compra (opcional)' : 'Comprador o quién pagó (opcional)') + '<input id="m-contra" type="text" list="dl-contra" autocomplete="off" value="' + esc(m.contraparte) + '"></label>' +
       '<datalist id="dl-contra">' + contrapartes.map(c => '<option value="' + esc(c) + '">').join('') + '</datalist>' +
       '<label class="campo">Detalle (opcional)<input id="m-detalle" type="text" autocomplete="off" placeholder="' + (esGasto ? 'Ej.: 20 fardos de pasto' : 'Ej.: venta del toro Pampero') + '" value="' + esc(m.detalle) + '"></label>' +
+      (S.config.usaLotes ? '<label class="campo">¿Es de un lote? (opcional)<select id="m-lote"><option value="">No, es un gasto general</option>' +
+        S.lotes.slice().sort((x, y) => (x.estado === 'Activo' ? 0 : 1) - (y.estado === 'Activo' ? 0 : 1) || x.nombre.localeCompare(y.nombre)).map(l => '<option value="' + esc(l.id) + '"' + (l.id === m.loteId ? ' selected' : '') + '>' + esc(l.nombre) + (l.estado !== 'Activo' ? ' (cerrado)' : '') + '</option>').join('') + '</select></label>' : '') +
       '<label class="campo">¿Es para un animal en particular? (opcional)<select id="m-animal"><option value="">No, es un gasto general</option>' +
       animalesOpc.map(a => '<option value="' + esc(a.id) + '"' + (a.id === m.animalId ? ' selected' : '') + '>' + esc(a.nombre) + (a.estado !== 'Activo' ? ' (' + esc(a.estado.toLowerCase()) + ')' : '') + '</option>').join('') + '</select></label>' +
       '<div class="campo">Foto del comprobante (opcional)<label class="btn-foto" id="m-fotobtn"><input type="file" id="m-foto" accept="image/*"><span id="m-fototxt">📷 Sacar o elegir una foto</span></label><div class="foto-prev" id="m-prev"></div></div>' +
@@ -320,7 +325,7 @@
         btn.textContent = 'Guardando…';
         const nuevo = {
           id: m.id, tipo, fecha: $('#m-fecha').value, monto: valor, moneda: est.moneda, categoria: est.categoria,
-          detalle: $('#m-detalle').value, contraparte: $('#m-contra').value, animalId: $('#m-animal').value, fotoId,
+          detalle: $('#m-detalle').value, contraparte: $('#m-contra').value, animalId: $('#m-animal').value, loteId: $('#m-lote') ? $('#m-lote').value : (m.loteId || ''), fotoId,
           por: S.quien, creado: m.creado
         };
         const r = await api('movs', { accion: 'guardar', mov: nuevo });
@@ -511,6 +516,7 @@
       '<label class="campo">Especie<select id="i-esp"><option>Bovino</option><option>Ovino</option><option>Otro</option></select></label>' +
       '<label class="campo">Categoría (opcional)<input id="i-cat" type="text" list="dl-icat" autocomplete="off" placeholder="Toro, Oveja, Vaquillona…"></label><datalist id="dl-icat"></datalist>' +
       '<label class="campo">Raza (opcional)<input id="i-raza" type="text" autocomplete="off"></label>' +
+      (S.config.usaLotes ? '<label class="campo">Lote (opcional)<select id="i-lote"><option value="">Sin lote</option>' + S.lotes.filter(l => l.estado === 'Activo').map(l => '<option value="' + esc(l.id) + '">' + esc(l.nombre) + '</option>').join('') + '</select></label>' : '') +
       '<label class="campo">Origen (opcional)<input id="i-origen" type="text" autocomplete="off" placeholder="Ej.: nacido en el campo"></label>' +
       '<p class="nota">Después se puede corregir animal por animal. Si el lote es mezclado, importá por tandas (por ejemplo, primero los bovinos y después los ovinos).</p></div>' +
       '<div class="tarjeta"><h2 style="margin-top:0">2. Las lecturas</h2>' +
@@ -573,7 +579,7 @@
     async function alta() {
       if (est.subiendo) return; est.subiendo = true;
       const L = est.lect, btn = $('#i-alta'); btn.disabled = true; btn.textContent = 'Dando de alta…';
-      const base = { especie: $('#i-esp').value, categoria: $('#i-cat').value.trim(), raza: $('#i-raza').value.trim(), origen: $('#i-origen').value.trim(), estado: 'Activo' };
+      const base = { especie: $('#i-esp').value, categoria: $('#i-cat').value.trim(), raza: $('#i-raza').value.trim(), loteId: $('#i-lote') ? $('#i-lote').value : '', origen: $('#i-origen').value.trim(), estado: 'Activo' };
       const items = L.nuevos.concat(L.parecidos.filter(p => est.marcados.has(p.it.norm)).map(p => p.it));
       const lote = items.map(it => Object.assign({ id: nuevoId(), nombre: G.nombreDeLectura(it), caravana: it.numero }, base));
       let creados = 0, omitidos = [];
@@ -630,6 +636,7 @@
       const cg = G.porCategoria(movs, 'gasto', v, tc), ci = G.porCategoria(movs, 'ingreso', v, tc);
       const pm = G.porMes(movs, v, tc), pa = G.porAnimal(movs, S.animales, v, tc);
       const f = n => G.fmtMonto(n, mon);
+      const rl = S.config.usaLotes ? resultadosPorLote(movs, v, tc) : [];
       const barras = (lista, cls) => lista.map(c => '<div class="barra-fila"><div class="t"><span>' + esc(c.categoria) + '</span><b>' + esc(f(c.total)) + ' <span class="nota">(' + Math.round(c.pct * 100) + '%)</span></b></div><div class="barra ' + cls + '"><i style="width:' + Math.max(2, Math.round(c.pct * 100)) + '%"></i></div></div>').join('');
       const maxMes = Math.max(1, ...pm.map(x => Math.max(x.gastos, x.ingresos)));
       cuerpo.innerHTML =
@@ -652,8 +659,10 @@
         (pa.length ? '<h2>Resultado por animal</h2><div class="tarjeta"><table class="t"><thead><tr><th>Animal</th><th>Gastos</th><th>Ingresos</th><th>Resultado</th></tr></thead><tbody>' +
           pa.map(x => '<tr><td><a href="#animal/' + esc(x.animalId) + '">' + esc(x.animal.nombre) + '</a></td><td>' + esc(f(x.gastos)) + '</td><td>' + esc(f(x.ingresos)) + '</td><td class="' + (x.resultado >= 0 ? 'pos' : 'neg') + '"><b>' + esc(f(x.resultado)) + '</b></td></tr>').join('') +
           '</tbody></table><p class="nota">Incluye solo los movimientos que se marcaron como "para un animal en particular".</p></div>' : '') +
+        (S.config.usaLotes && rl.length ? '<h2>Resultado por lote</h2><div class="tarjeta"><table class="t"><thead><tr><th>Lote</th><th>Gastos</th><th>Ingresos</th><th>Resultado</th></tr></thead><tbody>' +
+          rl.map(x => '<tr><td><a href="#lote/' + esc(x.lote.id) + '">' + esc(x.lote.nombre) + '</a></td><td>' + esc(f(x.i.gastos)) + '</td><td>' + esc(f(x.i.ingresos)) + '</td><td class="' + (x.i.resultado >= 0 ? 'pos' : 'neg') + '"><b>' + esc(f(x.i.resultado)) + '</b></td></tr>').join('') + '</tbody></table></div>' : '') +
         '<button class="btn sec" type="button" id="r-csv">⬇️ Descargar los movimientos (para Excel)</button>';
-      $('#r-csv').onclick = () => descargar('movimientos.csv', G.aCsv(movs, S.animales), 'text/csv;charset=utf-8');
+      $('#r-csv').onclick = () => descargar('movimientos.csv', G.aCsv(movs, S.animales, S.lotes), 'text/csv;charset=utf-8');
     }
     pintar();
   }
@@ -672,6 +681,8 @@
     app.innerHTML = encabezado('Ajustes', '#inicio') +
       '<form id="f-aj">' +
       '<label class="campo">Nombre del establecimiento<input id="j-nombre" type="text" value="' + esc(c.nombre) + '"></label>' +
+      '<label class="check" style="border:none"><input type="checkbox" id="j-lotes"' + (c.usaLotes ? ' checked' : '') + '> <span><b>Manejar lotes de hacienda</b> (invernada)<br><span class="nota">Agrega los lotes con pesadas y su resultado: ganancia diaria de peso, costo por kilo y margen por cabeza.</span></span></label>' +
+      '<button type="button" class="btn sec mini" id="j-plantilla" style="margin:6px 0 12px">Usar los rubros de invernada</button>' +
       '<div class="campo">Logo (opcional)<div class="logo-edit"><div id="j-logoprev"></div><label class="btn-foto"><input type="file" id="j-logo" accept="image/*"><span>🖼️ Elegir el logo</span></label></div></div>' +
       '<div class="campo">Color de la app<div class="chips" id="j-colores"></div><label class="campo" style="margin-top:8px">O elegí otro color<input type="color" id="j-color" value="' + esc(c.color || '#2f6b3a') + '" style="height:46px;padding:2px"></label></div>' +
       '<label class="campo">Tipo de cambio (pesos por dólar) para los resultados "todo en una moneda"<input id="j-tc" type="text" inputmode="decimal" value="' + esc(String(c.tc).replace('.', ',')) + '"></label>' +
@@ -693,6 +704,12 @@
       app.querySelectorAll('#j-colores .chip').forEach(b => { b.onclick = () => { est.color = b.dataset.c; $('#j-color').value = est.color; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); }; });
     }
     pintarMarcaAj();
+    $('#j-plantilla').onclick = () => {
+      if (!confirm('¿Reemplazar los tipos de gasto e ingreso por los de invernada? Los movimientos ya cargados no se tocan.')) return;
+      $('#j-cg').value = ['Compra de hacienda', 'Pasturas y verdeos', 'Ración y suplementos', 'Sanidad / veterinario', 'Flete', 'Comisiones y gastos de venta', 'Arrendamiento', 'Personal / jornales', 'Combustible', 'Mantenimiento (alambrados, aguadas)', 'Impuestos y tasas', 'Otros'].join('\n');
+      $('#j-ci').value = ['Venta de hacienda', 'Otros'].join('\n');
+      $('#j-lotes').checked = true;
+    };
     $('#j-color').oninput = ev => { est.color = ev.target.value; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); };
     $('#j-logo').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
@@ -707,7 +724,7 @@
       const lineas = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
       const btn = $('#j-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
       try {
-        const r = await api('config', { config: { nombre: $('#j-nombre').value, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: c.personas } });
+        const r = await api('config', { config: { nombre: $('#j-nombre').value, usaLotes: $('#j-lotes').checked, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: c.personas } });
         S.config = r.config; aplicarMarca(S.config);
         aviso('Ajustes guardados ✅'); location.hash = '#inicio';
       } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Guardar los ajustes'; }
@@ -717,6 +734,142 @@
     $('#j-salir').onclick = () => { if (confirm('¿Salir? La próxima vez vas a tener que ingresar la clave de nuevo.')) cerrarSesion(); };
   }
 
+
+  // ---------- lotes de hacienda (invernada) ----------
+  function vistaDeLote(l) {
+    const mm = S.movs.filter(m => m.loteId === l.id);
+    const usd = mm.some(m => m.moneda === 'USD'), uyu = mm.some(m => m.moneda === 'UYU');
+    return usd && uyu ? 'TODO_UYU' : usd ? 'USD' : 'UYU';
+  }
+  function resultadosPorLote(movs, v, tc) {
+    return S.lotes.map(l => ({ lote: l, i: G.indicadoresLote(l, movs, v, tc) })).filter(x => x.i.n).sort((x, y) => y.i.resultado - x.i.resultado);
+  }
+  const kg = n => (n === null || n === undefined || !isFinite(n)) ? '—' : G.fmtNum(n, Math.abs(n) >= 100 ? 0 : 1) + ' kg';
+
+  const filtroLotes = { estado: 'Activo' };
+  function pantallaLotes() {
+    app.innerHTML = encabezado('Lotes de hacienda', '#inicio') +
+      '<a class="btn" href="#lote/nuevo" style="margin-top:0">➕ Agregar un lote</a>' +
+      '<div class="chips" id="l-fil"></div><div id="l-lista"></div>';
+    function pintar() {
+      const op = [['Activo', 'En el campo'], ['Cerrado', 'Cerrados'], ['todos', 'Todos']];
+      $('#l-fil').innerHTML = op.map(o => '<button type="button" class="chip sm' + (filtroLotes.estado === o[0] ? ' on' : '') + '" data-e="' + o[0] + '">' + o[1] + '</button>').join('');
+      app.querySelectorAll('#l-fil .chip').forEach(b => { b.onclick = () => { filtroLotes.estado = b.dataset.e; pintar(); }; });
+      const lista = S.lotes.filter(l => filtroLotes.estado === 'todos' || l.estado === filtroLotes.estado).sort((x, y) => (x.fechaEntrada < y.fechaEntrada ? 1 : -1));
+      $('#l-lista').innerHTML = lista.length ? lista.map(l => {
+        const v = vistaDeLote(l), mon = G.monedaDeVista(v), i = G.indicadoresLote(l, S.movs, v, S.config.tc);
+        return '<a class="tarjeta lote-tj" href="#lote/' + esc(l.id) + '"><div class="t"><b>' + esc(l.nombre) + '</b><span class="badge ' + (l.estado === 'Activo' ? 'activo' : 'vendido') + '">' + (l.estado === 'Activo' ? 'En el campo' : 'Cerrado') + '</span></div>' +
+          '<div class="nota">' + i.cabezas + ' animales' + (i.diasCampo !== null ? ' · ' + i.diasCampo + ' días' : '') + (i.ult ? ' · último peso ' + kg(i.ult.pesoProm) : '') + (i.gdp !== null ? ' · ' + G.fmtNum(i.gdp, 2) + ' kg/día' : '') + '</div>' +
+          (i.n ? '<div class="nota">Resultado hasta ahora: <b class="' + (i.resultado >= 0 ? 'pos' : 'neg') + '">' + esc(G.fmtMonto(i.resultado, mon)) + '</b></div>' : '') + '</a>';
+      }).join('') : '<p class="nota" style="margin-top:14px">No hay lotes en esta lista.</p>';
+    }
+    pintar();
+  }
+
+  function pantallaLote(id) {
+    const nuevo = id === 'nuevo';
+    const base = nuevo ? { id: nuevoId(), nombre: '', cantidad: '', cantidadActual: '', fechaEntrada: G.hoy(), pesoEntrada: '', estado: 'Activo', fechaCierre: '', notas: '', pesadas: [] } : lotePorId(id);
+    if (!base) { app.innerHTML = encabezado('Lote', '#lotes') + '<p>No se encontró ese lote.</p>'; return; }
+    const l = JSON.parse(JSON.stringify(base));
+    const num = v => v === '' || v === undefined ? '' : String(v).replace('.', ',');
+    const campoN = (rot, idc, val, ph) => '<label class="campo">' + rot + '<input id="' + idc + '" type="text" inputmode="decimal" autocomplete="off" value="' + esc(num(val)) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></label>';
+    app.innerHTML = encabezado(nuevo ? 'Agregar un lote' : l.nombre, '#lotes') +
+      '<form id="f-lote">' +
+      '<label class="campo">Nombre del lote<input id="l-nombre" type="text" autocomplete="off" value="' + esc(l.nombre) + '" placeholder="Ej.: Novillos marzo 2026"></label>' +
+      campoN('Cantidad de animales que entraron', 'l-cant', l.cantidad) +
+      campoN('Cantidad actual (si hubo bajas; si no, dejalo vacío)', 'l-act', l.cantidadActual === l.cantidad ? '' : l.cantidadActual) +
+      '<label class="campo">Fecha de entrada<input id="l-fecha" type="date" value="' + esc(l.fechaEntrada) + '"></label>' +
+      campoN('Peso promedio de entrada (kg por animal)', 'l-peso', l.pesoEntrada, 'Ej.: 310') +
+      '<label class="campo">Estado<select id="l-estado"><option value="Activo"' + (l.estado === 'Activo' ? ' selected' : '') + '>En el campo</option><option value="Cerrado"' + (l.estado === 'Cerrado' ? ' selected' : '') + '>Cerrado (ya se vendió)</option></select></label>' +
+      '<label class="campo" id="l-cierre-w">Fecha de cierre<input id="l-cierre" type="date" value="' + esc(l.fechaCierre) + '"></label>' +
+      '<label class="campo">Notas (opcional)<textarea id="l-notas">' + esc(l.notas) + '</textarea></label>' +
+      '<p class="neg" id="l-error"></p><button class="btn" type="submit" id="l-guardar">' + (nuevo ? 'Guardar el lote' : 'Guardar los cambios') + '</button>' +
+      (nuevo ? '' : '<button class="btn peligro" type="button" id="l-borrar">Eliminar este lote</button>') + '</form>' +
+      (nuevo ? '' : '<div id="l-resto"></div>');
+    const pintarCierre = () => $('#l-cierre-w').classList.toggle('oculto', $('#l-estado').value === 'Activo');
+    $('#l-estado').onchange = pintarCierre; pintarCierre();
+
+    function datos() {
+      const n = G.parseMonto;
+      const cant = Math.round(n($('#l-cant').value));
+      const act = $('#l-act').value.trim() ? Math.round(n($('#l-act').value)) : cant;
+      return { id: l.id, nombre: $('#l-nombre').value, cantidad: cant, cantidadActual: act, fechaEntrada: $('#l-fecha').value, pesoEntrada: n($('#l-peso').value) || 0,
+        estado: $('#l-estado').value, fechaCierre: $('#l-cierre').value, notas: $('#l-notas').value, pesadas: l.pesadas };
+    }
+    async function guardar(msgOk) {
+      const r = await api('lotes', { accion: 'guardar', lote: datos() });
+      const i = S.lotes.findIndex(x => x.id === r.lote.id);
+      if (i >= 0) S.lotes[i] = r.lote; else S.lotes.push(r.lote);
+      return r.lote;
+    }
+    $('#f-lote').onsubmit = async ev => {
+      ev.preventDefault();
+      const err = $('#l-error'); err.textContent = '';
+      if (!$('#l-nombre').value.trim()) { err.textContent = 'Escribí el nombre del lote.'; return; }
+      if (!(G.parseMonto($('#l-cant').value) > 0)) { err.textContent = 'Escribí cuántos animales tiene el lote.'; return; }
+      const btn = $('#l-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+      try { const lote = await guardar(); aviso('Guardado ✅'); location.hash = nuevo ? '#lote/' + lote.id : '#lotes'; }
+      catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = nuevo ? 'Guardar el lote' : 'Guardar los cambios'; }
+    };
+    if (nuevo) return;
+    $('#l-borrar').onclick = async () => {
+      const n = S.movs.filter(m => m.loteId === l.id).length;
+      if (!confirm('¿Eliminar el lote "' + l.nombre + '"?' + (n ? '\n\nTiene ' + n + ' movimientos: no se borran, quedan como gastos o ingresos generales.' : ''))) return;
+      try { await api('lotes', { accion: 'borrar', id: l.id }); S.lotes = S.lotes.filter(x => x.id !== l.id); S.movs.forEach(m => { if (m.loteId === l.id) m.loteId = ''; }); aviso('Lote eliminado'); location.hash = '#lotes'; }
+      catch (e) { aviso(e.message, true); }
+    };
+
+    function pintarResto() {
+      const lote = lotePorId(l.id) || l;
+      const v = vistaDeLote(lote), mon = G.monedaDeVista(v), f = x => G.fmtMonto(x, mon), tc = S.config.tc;
+      const i = G.indicadoresLote(lote, S.movs, v, tc);
+      const mm = S.movs.filter(m => m.loteId === lote.id).sort((x, y) => (x.fecha < y.fecha ? 1 : -1));
+      const fila = (t, val) => '<tr><td>' + t + '</td><td><b>' + val + '</b></td></tr>';
+      $('#l-resto').innerHTML =
+        '<h2>Resultado del lote</h2><div class="hero ' + (i.resultado >= 0 ? 'bien' : 'mal') + '"><small>' + (lote.estado === 'Cerrado' ? 'Resultado final' : 'Resultado hasta ahora (gastos e ingresos cargados)') + '</small><b>' + esc(f(i.resultado)) + '</b></div>' +
+        '<div class="tarjeta"><table class="t"><tbody>' +
+        fila('Animales', i.cabezas) +
+        fila('Días en el campo', i.diasCampo === null ? '—' : i.diasCampo) +
+        fila('Peso de entrada', kg(lote.pesoEntrada || null)) +
+        fila('Último peso' + (i.ult ? ' (' + esc(G.fechaCorta(i.ult.fecha)) + ')' : ''), kg(i.ult ? i.ult.pesoProm : null)) +
+        fila('Kilos ganados por animal', kg(i.kgGanadosCab)) +
+        fila('Ganancia diaria', i.gdp === null ? '—' : G.fmtNum(i.gdp, 2) + ' kg/día') +
+        fila('Kilos producidos (total)', kg(i.kgProd)) +
+        fila('Gastos', esc(f(i.gastos))) + fila('Ingresos', esc(f(i.ingresos))) +
+        fila('Resultado por animal', i.margenCabeza === null ? '—' : esc(f(i.margenCabeza))) +
+        fila('Costo por kilo ganado', i.costoKg === null ? '—' : esc(f(i.costoKg)) + '/kg') +
+        '</tbody></table><p class="nota">El costo por kilo ganado no cuenta la compra de la hacienda (rubros que dicen "compra"). Se calcula con la última pesada.' + (v.indexOf('TODO') === 0 ? ' Los dólares se convirtieron a pesos con el tipo de cambio de Ajustes.' : '') + '</p></div>' +
+        '<h2>Pesadas</h2><div class="tarjeta">' +
+        ((lote.pesadas || []).length ? '<table class="t"><thead><tr><th>Fecha</th><th>Pesados</th><th>Promedio</th><th></th></tr></thead><tbody>' + lote.pesadas.map(p => '<tr><td>' + esc(G.fechaCorta(p.fecha)) + '</td><td>' + (p.cantidad || '—') + '</td><td><b>' + esc(kg(p.pesoProm)) + '</b></td><td><button type="button" class="btn sec mini" data-p="' + esc(p.id) + '" style="margin:0">✕</button></td></tr>').join('') + '</tbody></table>' : '<p class="nota">Todavía no hay pesadas.</p>') +
+        '<form id="f-pes"><label class="campo">Fecha de la pesada<input id="p-fecha" type="date" value="' + G.hoy() + '"></label>' +
+        '<label class="campo">Cuántos animales se pesaron<input id="p-cant" type="text" inputmode="numeric" autocomplete="off" placeholder="' + lote.cantidadActual + '"></label>' +
+        '<label class="campo">Peso promedio (kg por animal)<input id="p-peso" type="text" inputmode="decimal" autocomplete="off"></label>' +
+        '<p class="neg" id="p-error"></p><button class="btn" type="submit" style="margin-top:6px">Agregar la pesada</button></form></div>' +
+        '<h2>Gastos e ingresos de este lote</h2>' +
+        '<div class="grilla"><a class="btn gasto" href="#gasto?lote=' + esc(lote.id) + '">🧾 Cargar un gasto</a><a class="btn" href="#ingreso?lote=' + esc(lote.id) + '">💰 Cargar un ingreso</a></div>' +
+        (mm.length ? '<div class="tarjeta">' + filasMov(mm, true) + '</div>' : '<p class="nota">Todavía no hay gastos ni ingresos cargados para este lote.</p>');
+      app.querySelectorAll('button[data-p]').forEach(b => { b.onclick = async () => {
+        if (!confirm('¿Borrar esta pesada?')) return;
+        l.pesadas = (lotePorId(l.id).pesadas || []).filter(p => p.id !== b.dataset.p);
+        try { await guardarPesadas(); pintarResto(); } catch (e) { aviso(e.message, true); }
+      }; });
+      $('#f-pes').onsubmit = async ev => {
+        ev.preventDefault();
+        const err = $('#p-error'); err.textContent = '';
+        const peso = G.parseMonto($('#p-peso').value), fecha = $('#p-fecha').value;
+        if (!(peso > 0)) { err.textContent = 'Escribí el peso promedio.'; return; }
+        if (!fecha) { err.textContent = 'Falta la fecha.'; return; }
+        l.pesadas = (lotePorId(l.id).pesadas || []).concat([{ id: nuevoId(), fecha, cantidad: Math.round(G.parseMonto($('#p-cant').value)) || 0, pesoProm: peso }]);
+        try { await guardarPesadas(); aviso('Pesada agregada ✅'); pintarResto(); } catch (e) { err.textContent = e.message; }
+      };
+    }
+    async function guardarPesadas() { // guarda solo las pesadas, sin tocar lo que se esté escribiendo arriba
+      const actual = lotePorId(l.id);
+      const r = await api('lotes', { accion: 'guardar', lote: Object.assign({}, actual, { pesadas: l.pesadas }) });
+      const i = S.lotes.findIndex(x => x.id === r.lote.id); S.lotes[i] = r.lote;
+    }
+    pintarResto();
+  }
 
   // ---------- panel gráfico ----------
   const estP = { periodo: 'anio' };
@@ -769,6 +922,8 @@
       const pm = G.porMes(movs, v, tc);
       const pa = G.porAnimal(movs, S.animales, v, tc).slice().sort((a, b) => b.resultado - a.resultado);
       const maxA = Math.max(1, ...pa.map(x => Math.abs(x.resultado)));
+      const rlp = S.config.usaLotes ? resultadosPorLote(movs, v, tc) : [];
+      const maxL = Math.max(1, ...rlp.map(x => Math.abs(x.i.resultado)));
       // barras mes a mes (SVG)
       let barras = '';
       if (pm.length > 1) {
@@ -792,6 +947,9 @@
         (top.length ? '<h2>En qué se va la plata</h2><div class="tarjeta"><div class="dona-fila">' + donaSVG(top) + '<div class="dona-leyenda">' +
           top.map((c, i) => '<div><i style="background:' + COLORES[i % COLORES.length] + '"></i><span>' + esc(c.categoria) + '</span><b>' + Math.round(c.pct * 100) + '%</b></div>').join('') + '</div></div></div>' : '') +
         (barras ? '<h2>Mes a mes</h2><div class="tarjeta">' + barras + '</div>' : '') +
+        (S.config.usaLotes && rlp.length ? '<h2>Cómo le fue a cada lote</h2><div class="tarjeta">' + rlp.slice(0, 8).map(x =>
+          '<a class="ani-fila" href="#lote/' + esc(x.lote.id) + '"><div class="t"><span>' + esc(x.lote.nombre) + '</span><b class="' + (x.i.resultado >= 0 ? 'pos' : 'neg') + '">' + esc(f(x.i.resultado)) + '</b></div>' +
+          '<div class="barra ' + (x.i.resultado >= 0 ? 'ing' : '') + '"><i style="width:' + Math.max(3, Math.round(Math.abs(x.i.resultado) / maxL * 100)) + '%"></i></div></a>').join('') + '</div>' : '') +
         (pa.length ? '<h2>Cómo le fue a cada animal</h2><div class="tarjeta">' + pa.slice(0, 8).map(x =>
           '<a class="ani-fila" href="#animal/' + esc(x.animalId) + '"><div class="t"><span>' + esc(x.animal.nombre) + '</span><b class="' + (x.resultado >= 0 ? 'pos' : 'neg') + '">' + esc(f(x.resultado)) + '</b></div>' +
           '<div class="barra ' + (x.resultado >= 0 ? 'ing' : '') + '"><i style="width:' + Math.max(3, Math.round(Math.abs(x.resultado) / maxA * 100)) + '%"></i></div></a>').join('') + '</div>' : '') +
@@ -811,6 +969,7 @@
       paso('💰', 'Cargar un ingreso', '<p>Igual que un gasto, pero con el botón <b>Cargar un ingreso</b>: ventas de animales, premios de exposiciones, servicios, etc.</p>') +
       paso('🐂', 'Gastos de un animal en particular', '<p>En el gasto o ingreso aparece la pregunta <b>"¿Es para un animal en particular?"</b>. Si elegís uno, después se ve cuánto costó y cuánto dejó ese animal. Si es un gasto de todo el campo, dejalo en "No, es un gasto general".</p><p>Si cargás la <b>venta</b> de un animal, la app pregunta si lo marca como vendido.</p>') +
       paso('📋', 'Animales', '<p>Tocá <b>Animales → Agregar un animal</b> y completá nombre, especie y lo que sepas (caravana, raza, nacimiento, foto). Tocando un animal se ven sus gastos e ingresos y se puede cambiar su estado: en el campo, vendido o fallecido.</p>') +
+      (S.config.usaLotes ? paso('📦', 'Lotes de hacienda', '<p>Un <b>lote</b> es un grupo de animales que entró junto. Tocá <b>Lotes de hacienda → Agregar un lote</b> y poné cuántos son, la fecha y el peso promedio de entrada. Cada tanto agregá una <b>pesada</b> (cuántos pesaste y el promedio). Al cargar un gasto o un ingreso, elegí a qué lote pertenece. En la ficha del lote ves la ganancia diaria de peso, el costo por kilo ganado y el resultado por animal.</p>') : '') +
       paso('📥', 'Cargar muchos animales de una vez', '<p>Si tenés el archivo (TXT o CSV) que sale del lector de caravanas, entrá a <b>Animales → Importar lecturas del bastón</b>. Elegí el archivo o pegá la lista de números. La app te muestra cuántos son nuevos y cuáles <b>ya existen</b> (esos se saltean, no se duplican) y recién ahí los das de alta.</p>') +
       paso('✏️', 'Me equivoqué, ¿cómo lo corrijo?', '<p>Entrá a <b>Ver todos los movimientos</b>, tocá el que querés cambiar y corregilo, o tocá <b>Eliminar</b> al final. Se puede buscar por palabra o filtrar por mes.</p>') +
       paso('📈', 'El Panel', '<p>Es la pantalla para ver cómo viene todo de un vistazo: si hay ganancia o pérdida, en qué se va la plata, cómo fue cada mes y cómo le fue a cada animal. Elegí arriba el período que querés mirar.</p>') +
@@ -832,10 +991,12 @@
     const partes = ruta.split('/');
     window.scrollTo(0, 0);
     switch (partes[0]) {
-      case 'gasto': case 'ingreso': pantallaMov(partes[0], null, q.get('animal') || ''); break;
+      case 'gasto': case 'ingreso': pantallaMov(partes[0], null, q.get('animal') || '', q.get('lote') || ''); break;
       case 'mov': { const m = S.movs.find(x => x.id === partes[1]); if (m) pantallaMov(m.tipo, m); else location.hash = '#movs'; break; }
       case 'movs': pantallaMovs(); break;
       case 'animales': pantallaAnimales(); break;
+      case 'lotes': pantallaLotes(); break;
+      case 'lote': pantallaLote(partes[1] || 'nuevo'); break;
       case 'importar': pantallaImportar(); break;
       case 'animal': pantallaAnimal(partes[1] || 'nuevo'); break;
       case 'resultados': pantallaResultados(); break;
