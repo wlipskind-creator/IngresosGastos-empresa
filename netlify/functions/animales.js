@@ -29,6 +29,9 @@ function limpiar(a) {
   };
 }
 
+// Compara caravanas sin importar espacios, puntos o guiones: "982 000123456789" = "982000123456789".
+export const normCaravana = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 export default async (req) => {
   const e = exigirClave(req);
   if (e) return e;
@@ -45,11 +48,33 @@ export default async (req) => {
     if (body.accion === "guardar") {
       const r = limpiar(body.animal || {});
       if (r.error) return json({ error: r.error }, 400);
+      const nc = normCaravana(r.animal.caravana);
+      if (nc) {
+        const otro = lista.find(x => x.id !== r.animal.id && normCaravana(x.caravana) === nc);
+        if (otro) return json({ error: "Ya hay otro animal con esa caravana: " + otro.nombre }, 409);
+      }
       const i = lista.findIndex(x => x.id === r.animal.id);
       if (i >= 0) lista[i] = r.animal; else lista.push(r.animal);
       await store.setJSON("animales", lista);
       if (r.animal.fotoId) r.animal.fs = firmar(r.animal.fotoId);
       return json({ ok: true, animal: r.animal });
+    }
+    if (body.accion === "importar") {
+      // Alta masiva desde lecturas de caravanas. El control de duplicados se repite acá, en el servidor.
+      const entrantes = Array.isArray(body.animales) ? body.animales.slice(0, 300) : [];
+      const usadas = new Map(lista.filter(x => normCaravana(x.caravana)).map(x => [normCaravana(x.caravana), x.nombre]));
+      const creados = [], omitidos = [];
+      for (const en of entrantes) {
+        const r = limpiar(en || {});
+        if (r.error) { omitidos.push({ caravana: String(en && en.caravana || ""), motivo: r.error }); continue; }
+        const nc = normCaravana(r.animal.caravana);
+        if (!nc) { omitidos.push({ caravana: "", motivo: "Sin número de caravana" }); continue; }
+        if (usadas.has(nc)) { omitidos.push({ caravana: r.animal.caravana, motivo: "Ya existe: " + usadas.get(nc) }); continue; }
+        usadas.set(nc, r.animal.nombre);
+        lista.push(r.animal); creados.push(r.animal);
+      }
+      if (creados.length) await store.setJSON("animales", lista);
+      return json({ ok: true, creados: creados.length, omitidos });
     }
     if (body.accion === "borrar") {
       const a = lista.find(x => x.id === body.id);

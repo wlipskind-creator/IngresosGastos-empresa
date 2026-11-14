@@ -29,6 +29,7 @@ function limpiar(m, usuario) {
     animalId: ID_OK.test(m.animalId || "") ? m.animalId : "",
     fotoId: ID_OK.test(m.fotoId || "") ? m.fotoId : "",
     por: txt(m.por, 40),
+    modificadoPor: txt(m.modificadoPor, 40),
     creado: m.creado || new Date().toISOString(),
     modificado: new Date().toISOString()
   };
@@ -76,7 +77,11 @@ export default async (req) => {
       }
       if (previo) {
         mov.creado = previo.creado || mov.creado;
-        mov.por = mov.por || previo.por;
+        // quien lo cargó originalmente no cambia; si lo edita otra persona queda anotado aparte
+        const editor = mov.por;
+        mov.por = previo.por || editor;
+        if (editor && editor !== mov.por) mov.modificadoPor = editor;
+        else if (previo.modificadoPor && !editor) mov.modificadoPor = previo.modificadoPor;
         if (previo.fotoId && previo.fotoId !== mov.fotoId) { // se cambió la foto: se borra la anterior
           const fotos = getStore("fotos");
           await fotos.delete(previo.fotoId);
