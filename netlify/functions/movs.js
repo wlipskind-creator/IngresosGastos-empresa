@@ -27,6 +27,7 @@ function limpiar(m, usuario) {
     detalle: txt(m.detalle, 200),
     contraparte: txt(m.contraparte, 100),
     animalId: ID_OK.test(m.animalId || "") ? m.animalId : "",
+    loteId: ID_OK.test(m.loteId || "") ? m.loteId : "",
     fotoId: ID_OK.test(m.fotoId || "") ? m.fotoId : "",
     por: txt(m.por, 40),
     modificadoPor: txt(m.modificadoPor, 40),

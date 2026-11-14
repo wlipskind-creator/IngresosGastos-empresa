@@ -18,6 +18,7 @@ function limpiar(a) {
       especie: ESPECIES.includes(a.especie) ? a.especie : "Bovino",
       categoria: txt(a.categoria, 40),
       caravana: txt(a.caravana, 40),
+      loteId: ID_OK.test(a.loteId || "") ? a.loteId : "",
       raza: txt(a.raza, 60),
       nacimiento: fecha(a.nacimiento),
       origen: txt(a.origen, 100),

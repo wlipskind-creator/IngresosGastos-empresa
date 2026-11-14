@@ -4,7 +4,7 @@ import { json, exigirClave, leerJSON } from "./_util.js";
 // Ajustes: nombre del establecimiento, tipo de cambio, categorías, personas.
 const GASTOS = ["Alimentación", "Sanidad / veterinario", "Genética (compra de reproductores, semen, embriones)", "Exposiciones (inscripción, flete, preparación)", "Personal / jornales", "Combustible", "Mantenimiento del campo", "Impuestos y tasas", "Servicios (luz, agua, teléfono)", "Otros"];
 const INGRESOS = ["Venta de animales", "Premios de exposiciones", "Servicios (alquiler de reproductores, semen)", "Otros"];
-const DEFAULT = { nombre: "Mi cabaña", logo: "", color: "#2f6b3a", tc: 40, catGasto: GASTOS, catIngreso: INGRESOS, personas: [] };
+const DEFAULT = { nombre: "Mi cabaña", usaLotes: false, logo: "", color: "#2f6b3a", tc: 40, catGasto: GASTOS, catIngreso: INGRESOS, personas: [] };
 
 function lista(v, def, n) {
   if (!Array.isArray(v)) return def;
@@ -39,6 +39,7 @@ export default async (req) => {
       nombre: (typeof c.nombre === "string" && c.nombre.trim().slice(0, 80)) || DEFAULT.nombre,
       logo: typeof c.logo === "string" && c.logo.length < 250000 && (c.logo === "" || LOGO_OK.test(c.logo)) ? c.logo : (actual.logo || ""),
       color: typeof c.color === "string" && COLOR_OK.test(c.color) ? c.color.toLowerCase() : (actual.color || DEFAULT.color),
+      usaLotes: c.usaLotes === true,
       tc: tc > 0 && tc < 1e6 ? tc : DEFAULT.tc,
       catGasto: lista(c.catGasto, GASTOS, 40),
       catIngreso: lista(c.catIngreso, INGRESOS, 40),
