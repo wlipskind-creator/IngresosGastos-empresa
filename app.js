@@ -204,7 +204,7 @@
     return lista.map(m =>
       '<a class="mov" href="#mov/' + esc(m.id) + '"><div class="izq"><div class="cat">' + esc(m.categoria) + '</div>' +
       '<div class="sub">' + esc(G.fechaCorta(m.fecha)) + (m.detalle ? ' · ' + esc(m.detalle) : '') + (m.contraparte ? ' · ' + esc(m.contraparte) : '') +
-      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + '</div></div>' +
+      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + (m.por ? ' · 👤 ' + esc(m.por) : '') + '</div></div>' +
       (m.fotoId ? '<img class="miniatura" alt="" loading="lazy" src="' + urlFoto(m.fotoId, m.fs, true) + '">' : '') +
       '<div class="imp ' + (m.tipo === 'gasto' ? 'g' : 'i') + '">' + (m.tipo === 'gasto' ? '−' : '+') + esc(monto(m)) + '</div></a>').join('');
   }
@@ -253,6 +253,7 @@
       '<label class="campo">¿Es para un animal en particular? (opcional)<select id="m-animal"><option value="">No, es un gasto general</option>' +
       animalesOpc.map(a => '<option value="' + esc(a.id) + '"' + (a.id === m.animalId ? ' selected' : '') + '>' + esc(a.nombre) + (a.estado !== 'Activo' ? ' (' + esc(a.estado.toLowerCase()) + ')' : '') + '</option>').join('') + '</select></label>' +
       '<div class="campo">Foto del comprobante (opcional)<label class="btn-foto" id="m-fotobtn"><input type="file" id="m-foto" accept="image/*"><span id="m-fototxt">📷 Sacar o elegir una foto</span></label><div class="foto-prev" id="m-prev"></div></div>' +
+      (edit && m.por ? '<p class="nota">Cargado por <b>' + esc(m.por) + '</b>' + (m.creado ? ' el ' + esc(G.fechaCorta(m.creado.slice(0, 10))) : '') + (m.modificadoPor ? ' · última modificación de <b>' + esc(m.modificadoPor) + '</b>' : '') + '.</p>' : '') +
       '<p class="neg" id="m-error"></p>' +
       '<button class="btn ' + (esGasto ? 'gasto' : '') + '" type="submit" id="m-guardar">' + (edit ? 'Guardar los cambios' : 'Guardar') + '</button>' +
       (edit ? '<button class="btn peligro" type="button" id="m-borrar">Eliminar este movimiento</button>' : '') +
@@ -357,11 +358,11 @@
   }
 
   // ---------- lista de movimientos ----------
-  const filtroMovs = { mes: 'todos', tipo: 'todos', texto: '' };
+  const filtroMovs = { mes: 'todos', tipo: 'todos', texto: '', por: 'todos' };
   function pantallaMovs() {
     app.innerHTML = encabezado('Movimientos', '#inicio') +
       '<div class="fila"><select id="f-mes" class="ancho" style="flex:1;margin:0"></select></div>' +
-      '<div class="chips" id="f-tipo"></div>' +
+      '<div class="chips" id="f-tipo"></div><div class="chips" id="f-por"></div>' +
       '<input class="ancho" id="f-texto" type="search" placeholder="Buscar por detalle, proveedor, categoría…" value="' + esc(filtroMovs.texto) + '" style="margin-top:10px">' +
       '<div class="tarjeta" id="f-lista"></div>' +
       '<p class="nota" id="f-total"></p>';
@@ -371,9 +372,12 @@
     function pintar() {
       $('#f-tipo').innerHTML = tipos.map(t => '<button type="button" class="chip sm' + (filtroMovs.tipo === t[0] ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>').join('');
       app.querySelectorAll('#f-tipo .chip').forEach(b => { b.onclick = () => { filtroMovs.tipo = b.dataset.t; pintar(); }; });
+      const quienes = Array.from(new Set(S.movs.map(m => m.por).filter(Boolean))).sort();
+      $('#f-por').innerHTML = quienes.length > 1 ? ['todos'].concat(quienes).map(n => '<button type="button" class="chip sm' + (filtroMovs.por === n ? ' on' : '') + '" data-p="' + esc(n) + '">' + (n === 'todos' ? '👤 Todos' : esc(n)) + '</button>').join('') : '';
+      app.querySelectorAll('#f-por .chip').forEach(b => { b.onclick = () => { filtroMovs.por = b.dataset.p; pintar(); }; });
       const q = filtroMovs.texto.trim().toLowerCase();
-      let lista = S.movs.filter(m => (filtroMovs.mes === 'todos' || m.fecha.slice(0, 7) === filtroMovs.mes) && (filtroMovs.tipo === 'todos' || m.tipo === filtroMovs.tipo) &&
-        (!q || [m.categoria, m.detalle, m.contraparte, nombreAnimal(m.animalId)].join(' ').toLowerCase().includes(q)));
+      let lista = S.movs.filter(m => (filtroMovs.por === 'todos' || m.por === filtroMovs.por) && (filtroMovs.mes === 'todos' || m.fecha.slice(0, 7) === filtroMovs.mes) && (filtroMovs.tipo === 'todos' || m.tipo === filtroMovs.tipo) &&
+        (!q || [m.categoria, m.detalle, m.contraparte, m.por, nombreAnimal(m.animalId)].join(' ').toLowerCase().includes(q)));
       lista.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
       $('#f-lista').innerHTML = lista.length ? filasMov(lista.slice(0, 300), true) : '<p class="nota">No hay movimientos con ese filtro.</p>';
       const tot = ['UYU', 'USD'].map(mon => { const r = G.resumen(lista, mon, 1); return r.n ? mon === 'USD' ? 'US$: ' + G.fmtMonto(r.resultado, 'USD') : '$: ' + G.fmtMonto(r.resultado, 'UYU') : ''; }).filter(Boolean);
@@ -389,6 +393,7 @@
   function pantallaAnimales() {
     app.innerHTML = encabezado('Animales', '#inicio') +
       '<a class="btn" href="#animal/nuevo" style="margin-top:0">➕ Agregar un animal</a>' +
+      '<a class="btn sec" href="#importar" style="margin-top:10px">📥 Importar lecturas del bastón</a>' +
       '<div class="chips" id="a-fil"></div><div class="tarjeta" id="a-lista"></div>';
     function pintar() {
       const op = [['Activo', 'En el campo'], ['Vendido', 'Vendidos'], ['Fallecido', 'Fallecidos'], ['todos', 'Todos']];
@@ -495,6 +500,103 @@
         err.textContent = e.message;
       }
     };
+  }
+
+  // ---------- importar lecturas de caravanas ----------
+  function pantallaImportar() {
+    const est = { lect: null, marcados: new Set(), subiendo: false };
+    app.innerHTML = encabezado('Importar lecturas del bastón', '#animales') +
+      '<p class="nota">Cargá el archivo (TXT o CSV) que sale del lector, o pegá la lista de números. La app detecta los números, <b>saltea los que ya existen</b> y te muestra todo antes de dar de alta.</p>' +
+      '<div class="tarjeta"><h2 style="margin-top:0">1. Datos para todo el lote</h2>' +
+      '<label class="campo">Especie<select id="i-esp"><option>Bovino</option><option>Ovino</option><option>Otro</option></select></label>' +
+      '<label class="campo">Categoría (opcional)<input id="i-cat" type="text" list="dl-icat" autocomplete="off" placeholder="Toro, Oveja, Vaquillona…"></label><datalist id="dl-icat"></datalist>' +
+      '<label class="campo">Raza (opcional)<input id="i-raza" type="text" autocomplete="off"></label>' +
+      '<label class="campo">Origen (opcional)<input id="i-origen" type="text" autocomplete="off" placeholder="Ej.: nacido en el campo"></label>' +
+      '<p class="nota">Después se puede corregir animal por animal. Si el lote es mezclado, importá por tandas (por ejemplo, primero los bovinos y después los ovinos).</p></div>' +
+      '<div class="tarjeta"><h2 style="margin-top:0">2. Las lecturas</h2>' +
+      '<div class="campo">Archivo del lector<label class="btn-foto"><input type="file" id="i-arch" accept=".txt,.csv,.tsv,.log,text/plain,text/csv"><span>📄 Elegir el archivo</span></label></div>' +
+      '<label class="campo">…o pegá la lista acá<textarea id="i-texto" style="min-height:120px" placeholder="982000123456789&#10;982000123456790"></textarea></label>' +
+      '<button class="btn" type="button" id="i-revisar">Revisar las lecturas</button></div>' +
+      '<div id="i-res"></div>';
+    const catEsp = { Bovino: ['Toro', 'Vaca', 'Vaquillona', 'Novillo', 'Ternero', 'Ternera'], Ovino: ['Carnero', 'Oveja', 'Borrego', 'Borrega', 'Cordero', 'Cordera'], Otro: [] };
+    const pintarCat = () => { $('#dl-icat').innerHTML = (catEsp[$('#i-esp').value] || []).map(c => '<option value="' + c + '">').join(''); };
+    $('#i-esp').onchange = pintarCat; pintarCat();
+
+    $('#i-arch').onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      try {
+        $('#i-texto').value = await f.text();
+        $('span', ev.target.parentNode).textContent = '📄 ' + f.name;
+        aviso('Archivo leído. Tocá "Revisar las lecturas".');
+      } catch (e) { aviso('No se pudo leer el archivo.', true); }
+    };
+
+    $('#i-revisar').onclick = async () => {
+      try { const r = await api('animales'); S.animales = r.animales; } catch (e) { /* se usa lo que ya estaba cargado; el servidor igual controla duplicados */ }
+      const texto = $('#i-texto').value;
+      const lect = G.leerLecturas(texto);
+      if (!lect.items.length) { $('#i-res').innerHTML = '<p class="neg">No encontré números de caravana. Revisá el archivo o la lista pegada.</p>'; return; }
+      lect.nuevos = []; lect.existen = []; lect.parecidos = [];
+      for (const it of lect.items) {
+        const d = G.buscarDuplicado(it.norm, S.animales);
+        if (!d) lect.nuevos.push(it);
+        else if (d.tipo === 'igual') lect.existen.push({ it, animal: d.animal });
+        else lect.parecidos.push({ it, animal: d.animal });
+      }
+      est.lect = lect; est.marcados = new Set();
+      pintarRes();
+    };
+
+    function pintarRes() {
+      const L = est.lect, cont = $('#i-res');
+      const cortos = L.nuevos.filter(x => !x.largo).length;
+      const nAlta = L.nuevos.length + est.marcados.size;
+      cont.innerHTML = '<h2>3. Revisá antes de dar de alta</h2><div class="tarjeta"><div class="cifras">' +
+        '<div class="cifra"><small>Nuevos</small><b class="pos">' + L.nuevos.length + '</b></div>' +
+        '<div class="cifra"><small>Ya existen</small><b>' + L.existen.length + '</b></div>' +
+        '<div class="cifra"><small>Repetidos</small><b>' + L.repetidos + '</b></div></div>' +
+        '<p class="nota">Leídos: ' + (L.items.length + L.repetidos) + ' líneas con número' + (L.repetidos ? ' · ' + L.repetidos + ' repetidos en el archivo (se cuentan una sola vez)' : '') + (L.ignoradas ? ' · ' + L.ignoradas + ' líneas sin número ignoradas' : '') + '.</p></div>' +
+        (L.parecidos.length ? '<div class="tarjeta"><h2 style="margin-top:0">⚠️ Posibles duplicados (' + L.parecidos.length + ')</h2><p class="nota">Estos números se parecen a un animal que ya está cargado (uno corto contra el número largo completo). <b>No se dan de alta</b> salvo que los marques.</p>' +
+          L.parecidos.map((p, i) => '<label class="check"><input type="checkbox" data-i="' + i + '"' + (est.marcados.has(p.it.norm) ? ' checked' : '') + '> <span><b>' + esc(p.it.numero) + '</b><br><span class="nota">Se parece a ' + esc(p.animal.nombre) + ' (' + esc(p.animal.caravana) + ')</span></span></label>').join('') + '</div>' : '') +
+        (L.existen.length ? '<details class="tarjeta"><summary><b>Ya existen y se saltean (' + L.existen.length + ')</b></summary>' +
+          L.existen.slice(0, 200).map(x => '<div class="nota">' + esc(x.it.numero) + ' → ' + esc(x.animal.nombre) + (x.animal.estado !== 'Activo' ? ' (' + esc(x.animal.estado.toLowerCase()) + ')' : '') + '</div>').join('') + '</details>' : '') +
+        (L.nuevos.length ? '<details class="tarjeta"><summary><b>Se van a dar de alta (' + L.nuevos.length + ')</b></summary>' +
+          L.nuevos.slice(0, 300).map(x => '<div class="nota">' + esc(x.numero) + (x.largo ? '' : ' · número corto') + '</div>').join('') + '</details>' : '') +
+        (cortos ? '<p class="nota">ℹ️ ' + cortos + ' lecturas no tienen el formato largo de 15 dígitos. Revisá que sean caravanas y no otros datos del archivo (como fechas u horas).</p>' : '') +
+        '<p class="nota">Cada animal queda con el nombre provisorio <b>"Nº" + los últimos 6 dígitos</b> (por ejemplo, Nº 456789) y el número completo en el campo caravana. Después podés ponerle el nombre real.</p>' +
+        '<p class="neg" id="i-error"></p>' +
+        '<button class="btn" type="button" id="i-alta"' + (nAlta ? '' : ' disabled') + '>' + (nAlta ? 'Dar de alta ' + nAlta + ' animales' : 'No hay animales nuevos para dar de alta') + '</button>';
+      cont.querySelectorAll('input[data-i]').forEach(cb => { cb.onchange = () => { const p = L.parecidos[Number(cb.dataset.i)]; if (cb.checked) est.marcados.add(p.it.norm); else est.marcados.delete(p.it.norm); pintarRes(); window.scrollTo(0, document.body.scrollHeight); }; });
+      const b = $('#i-alta'); if (b && nAlta) b.onclick = alta;
+    }
+
+    async function alta() {
+      if (est.subiendo) return; est.subiendo = true;
+      const L = est.lect, btn = $('#i-alta'); btn.disabled = true; btn.textContent = 'Dando de alta…';
+      const base = { especie: $('#i-esp').value, categoria: $('#i-cat').value.trim(), raza: $('#i-raza').value.trim(), origen: $('#i-origen').value.trim(), estado: 'Activo' };
+      const items = L.nuevos.concat(L.parecidos.filter(p => est.marcados.has(p.it.norm)).map(p => p.it));
+      const lote = items.map(it => Object.assign({ id: nuevoId(), nombre: G.nombreDeLectura(it), caravana: it.numero }, base));
+      let creados = 0, omitidos = [];
+      try {
+        for (let i = 0; i < lote.length; i += 200) {
+          const r = await api('animales', { accion: 'importar', animales: lote.slice(i, i + 200) });
+          creados += r.creados; omitidos = omitidos.concat(r.omitidos);
+          btn.textContent = 'Dando de alta… ' + Math.min(i + 200, lote.length) + ' de ' + lote.length;
+        }
+        const a = await api('animales'); S.animales = a.animales;
+        app.innerHTML = '<div class="ok-grande"><div class="tilde">✅</div><h1>' + creados + ' animales dados de alta</h1>' +
+          (omitidos.length ? '<p class="nota">' + omitidos.length + ' se saltearon porque ya existían.</p>' : '') +
+          '<p class="nota">Tienen nombre provisorio (Nº + últimos 6 dígitos). Entrá a cada ficha para ponerle el nombre real, la raza y la fecha de nacimiento.</p></div>' +
+          '<a class="btn" href="#animales">Ver los animales</a><a class="btn sec" href="#importar" id="i-otro">Importar otro archivo</a>';
+        $('#i-otro').onclick = ev => { ev.preventDefault(); pantallaImportar(); };
+      } catch (e) {
+        est.subiendo = false;
+        try { const a = await api('animales'); S.animales = a.animales; } catch (x) { /* nada */ }
+        $('#i-error').textContent = 'Se cortó: ' + e.message + '. Tocá "Revisar las lecturas" de nuevo: los que ya se dieron de alta se saltean solos.';
+        btn.disabled = false; btn.textContent = 'Reintentar';
+        btn.onclick = () => { $('#i-revisar').click(); };
+      }
+    }
   }
 
   // ---------- resultados ----------
@@ -709,6 +811,7 @@
       paso('💰', 'Cargar un ingreso', '<p>Igual que un gasto, pero con el botón <b>Cargar un ingreso</b>: ventas de animales, premios de exposiciones, servicios, etc.</p>') +
       paso('🐂', 'Gastos de un animal en particular', '<p>En el gasto o ingreso aparece la pregunta <b>"¿Es para un animal en particular?"</b>. Si elegís uno, después se ve cuánto costó y cuánto dejó ese animal. Si es un gasto de todo el campo, dejalo en "No, es un gasto general".</p><p>Si cargás la <b>venta</b> de un animal, la app pregunta si lo marca como vendido.</p>') +
       paso('📋', 'Animales', '<p>Tocá <b>Animales → Agregar un animal</b> y completá nombre, especie y lo que sepas (caravana, raza, nacimiento, foto). Tocando un animal se ven sus gastos e ingresos y se puede cambiar su estado: en el campo, vendido o fallecido.</p>') +
+      paso('📥', 'Cargar muchos animales de una vez', '<p>Si tenés el archivo (TXT o CSV) que sale del lector de caravanas, entrá a <b>Animales → Importar lecturas del bastón</b>. Elegí el archivo o pegá la lista de números. La app te muestra cuántos son nuevos y cuáles <b>ya existen</b> (esos se saltean, no se duplican) y recién ahí los das de alta.</p>') +
       paso('✏️', 'Me equivoqué, ¿cómo lo corrijo?', '<p>Entrá a <b>Ver todos los movimientos</b>, tocá el que querés cambiar y corregilo, o tocá <b>Eliminar</b> al final. Se puede buscar por palabra o filtrar por mes.</p>') +
       paso('📈', 'El Panel', '<p>Es la pantalla para ver cómo viene todo de un vistazo: si hay ganancia o pérdida, en qué se va la plata, cómo fue cada mes y cómo le fue a cada animal. Elegí arriba el período que querés mirar.</p>') +
       paso('📊', 'Resultados en detalle', '<p>Elegí el período (este mes, este año, últimos 12 meses…) y se ve cuánto entró, cuánto salió y el <b>resultado</b>. Más abajo: en qué se gasta más, de dónde vienen los ingresos, mes a mes y el resultado de cada animal.</p><p>Si hay pesos y dólares, se puede ver todo convertido a una sola moneda. El tipo de cambio se ajusta en <b>Ajustes</b>.</p>') +
@@ -733,6 +836,7 @@
       case 'mov': { const m = S.movs.find(x => x.id === partes[1]); if (m) pantallaMov(m.tipo, m); else location.hash = '#movs'; break; }
       case 'movs': pantallaMovs(); break;
       case 'animales': pantallaAnimales(); break;
+      case 'importar': pantallaImportar(); break;
       case 'animal': pantallaAnimal(partes[1] || 'nuevo'); break;
       case 'resultados': pantallaResultados(); break;
       case 'ajustes': pantallaAjustes(); break;

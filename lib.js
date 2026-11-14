@@ -189,7 +189,64 @@
     return isFinite(n) ? n : NaN;
   }
 
-  const api = { parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
+
+  // ---- Lecturas de caravanas (archivo TXT/CSV del bastón o lista pegada) ----
+  // Compara sin importar espacios, puntos o guiones.
+  const normCaravana = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  // Devuelve { items:[{numero, norm, largo}], repetidos, ignoradas }.
+  // Busca en cada línea el número electrónico (15 dígitos, ej. 982 000123456789); si no hay,
+  // toma el primer dato que parezca un número de caravana. Los repetidos del archivo se juntan.
+  function leerLecturas(texto) {
+    const lineas = String(texto || '').replace(/^﻿/, '').split(/\r\n|\n|\r/);
+    const vistos = new Set(), items = [];
+    let repetidos = 0, ignoradas = 0;
+    for (const crudo of lineas) {
+      const linea = crudo.trim();
+      if (!linea) continue;
+      let numero = '', largo = false;
+      const m = linea.match(/(?<!\d)0?(\d{3})[ .\-_]?(\d{12})(?!\d)/);
+      if (m) { numero = m[1] + m[2]; largo = true; }
+      else {
+        for (const tk of linea.split(/[,;\t|]/)) {
+          const t = tk.trim().replace(/^["']|["']$/g, '');
+          if (/[\/:]/.test(t)) continue;                 // fechas y horas
+          const dig = (t.match(/\d/g) || []).length;
+          if (dig >= 4 && t.length <= 20) { numero = t; break; }
+        }
+      }
+      if (!numero) { ignoradas++; continue; }
+      const norm = normCaravana(numero);
+      if (vistos.has(norm)) { repetidos++; continue; }
+      vistos.add(norm);
+      items.push({ numero, norm, largo });
+    }
+    return { items, repetidos, ignoradas };
+  }
+
+  // Compara una lectura con los animales ya cargados.
+  // 'igual' = misma caravana; 'parecido' = un número corto que coincide con el final del largo (o al revés).
+  function buscarDuplicado(norm, animales) {
+    const soloNum = /^\d+$/.test(norm);
+    let parecido = null;
+    for (const a of animales) {
+      const n = normCaravana(a.caravana);
+      if (!n) continue;
+      if (n === norm) return { tipo: 'igual', animal: a };
+      if (!parecido && soloNum && /^\d+$/.test(n)) {
+        const [corto, largo] = n.length < norm.length ? [n, norm] : [norm, n];
+        if (corto.length >= 6 && largo.endsWith(corto)) parecido = { tipo: 'parecido', animal: a };
+      }
+    }
+    return parecido;
+  }
+
+  // Nombre provisorio del animal: "Nº " + últimos 6 dígitos (o el número si es corto).
+  function nombreDeLectura(it) {
+    return 'Nº ' + (it.largo ? it.norm.slice(-6) : it.numero);
+  }
+
+  const api = { normCaravana, leerLecturas, buscarDuplicado, nombreDeLectura, parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
     fmtNum, fmtMonto, fechaCorta, mesTexto, mesLargo, aCsv, cantidadMeses };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Gestion = api;

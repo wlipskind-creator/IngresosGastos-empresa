@@ -123,3 +123,7 @@ table.t th:first-child, table.t td:first-child { text-align: left; }
 .logo-edit .btn-foto { flex: 1; margin: 0; }
 .logo-prev { width: 84px; height: 84px; border-radius: 50%; object-fit: contain; background: #fff; border: 1px solid var(--borde); }
 .punto { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.check { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--borde); }
+.check input { width: 22px; height: 22px; margin-top: 3px; flex: none; }
+details.tarjeta summary { cursor: pointer; padding: 4px 0; }
