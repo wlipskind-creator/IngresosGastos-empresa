@@ -114,9 +114,11 @@
     return (volver ? '<p><a href="' + volver + '">← Volver</a></p>' : '') + '<h1>' + esc(titulo) + '</h1>';
   }
   function topDerecha() {
-    $('#top-der').innerHTML = S.clave ? '<button type="button" id="b-ajustes">⚙️</button>' : '';
+    $('#top-der').innerHTML = S.clave ? '<button type="button" id="b-ayuda" aria-label="Ayuda">❓</button> <button type="button" id="b-ajustes" aria-label="Ajustes">⚙️</button>' : '';
     const b = $('#b-ajustes');
     if (b) b.onclick = () => { location.hash = '#ajustes'; };
+    const h = $('#b-ayuda');
+    if (h) h.onclick = () => { location.hash = '#ayuda'; };
   }
 
   // ---------- entrada ----------
@@ -179,6 +181,7 @@
       '<a class="grande g-result" href="#resultados"><span class="ico">📊</span>Resultados</a></div>' +
       '<div class="grilla" style="margin-top:12px"><a class="grande g-sec" href="#movs">📋 Ver todos los movimientos</a>' +
       '<a class="grande g-sec" href="#ajustes">⚙️ Ajustes</a></div>' +
+      '<a class="btn sec" href="#ayuda" style="margin-top:12px">❓ Cómo se usa esta app</a>' +
       '<h2>Este mes (' + esc(G.mesLargo(G.hoy().slice(0, 7))) + ')</h2>' +
       (res.length ? res.map(x => '<div class="tarjeta"><div class="nota">' + (x.mon === 'USD' ? 'Dólares' : 'Pesos') + '</div><div class="cifras">' +
         '<div class="cifra"><small>Ingresos</small><b class="pos">' + esc(G.fmtMonto(x.r.ingresos, x.mon)) + '</b></div>' +
@@ -555,11 +558,32 @@
     $('#j-salir').onclick = () => { if (confirm('¿Salir? La próxima vez vas a tener que ingresar la clave de nuevo.')) cerrarSesion(); };
   }
 
+
+  // ---------- ayuda ----------
+  function pantallaAyuda() {
+    LS.set('gc-ayuda-vista', '1');
+    const paso = (ico, tit, txt) => '<div class="tarjeta"><h2 style="margin-top:0">' + ico + ' ' + tit + '</h2>' + txt + '</div>';
+    app.innerHTML = encabezado('Cómo se usa esta app', '#inicio') +
+      '<p class="nota">Una guía corta para empezar. Podés volver acá cuando quieras tocando el ❓ de arriba.</p>' +
+      paso('🏠', 'La pantalla de inicio', '<p>Tiene cuatro botones grandes: <b>Cargar un gasto</b>, <b>Cargar un ingreso</b>, <b>Animales</b> y <b>Resultados</b>. Abajo se ve cómo viene el mes y lo último que se cargó.</p>') +
+      paso('🧾', 'Cargar un gasto', '<ol><li>Tocá <b>Cargar un gasto</b>.</li><li>Escribí el <b>monto</b> (con coma para los centavos: 1250,50).</li><li>Elegí si es en <b>pesos</b> o en <b>dólares</b>.</li><li>Tocá <b>en qué fue</b> (alimentación, sanidad, etc.).</li><li>Si querés, escribí el proveedor y un detalle, y sacale una <b>foto al comprobante</b>.</li><li>Tocá <b>Guardar</b>. Aparece el tilde verde ✅.</li></ol><p class="nota">Lo único obligatorio es el monto y en qué fue. La fecha viene puesta con la de hoy: si el gasto fue otro día, cambiala.</p>') +
+      paso('💰', 'Cargar un ingreso', '<p>Igual que un gasto, pero con el botón <b>Cargar un ingreso</b>: ventas de animales, premios de exposiciones, servicios, etc.</p>') +
+      paso('🐂', 'Gastos de un animal en particular', '<p>En el gasto o ingreso aparece la pregunta <b>"¿Es para un animal en particular?"</b>. Si elegís uno, después se ve cuánto costó y cuánto dejó ese animal. Si es un gasto de todo el campo, dejalo en "No, es un gasto general".</p><p>Si cargás la <b>venta</b> de un animal, la app pregunta si lo marca como vendido.</p>') +
+      paso('📋', 'Animales', '<p>Tocá <b>Animales → Agregar un animal</b> y completá nombre, especie y lo que sepas (caravana, raza, nacimiento, foto). Tocando un animal se ven sus gastos e ingresos y se puede cambiar su estado: en el campo, vendido o fallecido.</p>') +
+      paso('✏️', 'Me equivoqué, ¿cómo lo corrijo?', '<p>Entrá a <b>Ver todos los movimientos</b>, tocá el que querés cambiar y corregilo, o tocá <b>Eliminar</b> al final. Se puede buscar por palabra o filtrar por mes.</p>') +
+      paso('📊', 'Resultados', '<p>Elegí el período (este mes, este año, últimos 12 meses…) y se ve cuánto entró, cuánto salió y el <b>resultado</b>. Más abajo: en qué se gasta más, de dónde vienen los ingresos, mes a mes y el resultado de cada animal.</p><p>Si hay pesos y dólares, se puede ver todo convertido a una sola moneda. El tipo de cambio se ajusta en <b>Ajustes</b>.</p>') +
+      paso('📱', 'Dejarla como una app en el celular', '<p>En Safari tocá el botón de <b>Compartir</b> (el cuadrado con la flecha) y elegí <b>Agregar a pantalla de inicio</b>. Así se abre con un toque, como cualquier app.</p>') +
+      paso('🔑', 'Entrar y salir', '<p>La clave se pide una sola vez en cada celular. Todos los que cargan usan la misma clave, pero cada uno pone <b>su nombre</b> para saber quién anotó cada cosa. Si algo no carga, revisá que haya señal e intentá de nuevo: no se pierde lo ya guardado.</p>') +
+      paso('💾', 'Copia de seguridad', '<p>En <b>Ajustes</b> hay un botón para descargar una copia de todo. Conviene hacerla de vez en cuando y guardarla en el Drive.</p>') +
+      '<a class="btn" href="#inicio">Entendido, ir al inicio</a>';
+  }
+
   // ---------- navegación ----------
   function enrutar() {
     if (!S.clave) { pantallaEntrada(); return; }
     if (!S.cargado) { cargarTodo().then(enrutar).catch(e => { if (e.clave) cerrarSesion('La clave no es correcta.'); else app.innerHTML = '<p class="neg">' + esc(e.message) + '</p><button class="btn" onclick="location.reload()">Reintentar</button>'; }); return; }
     topDerecha();
+    if (!LS.get('gc-ayuda-vista') && !location.hash) { location.hash = '#ayuda'; return; }
     const [ruta, consulta] = (location.hash.slice(1) || 'inicio').split('?');
     const q = new URLSearchParams(consulta || '');
     const partes = ruta.split('/');
@@ -572,6 +596,7 @@
       case 'animal': pantallaAnimal(partes[1] || 'nuevo'); break;
       case 'resultados': pantallaResultados(); break;
       case 'ajustes': pantallaAjustes(); break;
+      case 'ayuda': pantallaAyuda(); break;
       default: pantallaInicio();
     }
   }
