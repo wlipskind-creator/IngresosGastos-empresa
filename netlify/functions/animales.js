@@ -1,0 +1,69 @@
+import { getStore } from "@netlify/blobs";
+import { json, exigirClave, leerJSON, firmar, idNuevo, ID_OK } from "./_util.js";
+
+// Registro de animales (guardado como una lista en "animales").
+//  GET -> lista    POST {accion:"guardar", animal}  POST {accion:"borrar", id}
+const ESPECIES = ["Bovino", "Ovino", "Otro"];
+const ESTADOS = ["Activo", "Vendido", "Fallecido"];
+
+function limpiar(a) {
+  const txt = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
+  const fecha = v => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+  const nombre = txt(a.nombre, 80);
+  if (!nombre) return { error: "Falta el nombre o la identificación del animal" };
+  return {
+    animal: {
+      id: ID_OK.test(a.id || "") ? a.id : idNuevo(),
+      nombre,
+      especie: ESPECIES.includes(a.especie) ? a.especie : "Bovino",
+      categoria: txt(a.categoria, 40),
+      caravana: txt(a.caravana, 40),
+      raza: txt(a.raza, 60),
+      nacimiento: fecha(a.nacimiento),
+      origen: txt(a.origen, 100),
+      estado: ESTADOS.includes(a.estado) ? a.estado : "Activo",
+      fechaBaja: fecha(a.fechaBaja),
+      notas: txt(a.notas, 1000),
+      fotoId: ID_OK.test(a.fotoId || "") ? a.fotoId : ""
+    }
+  };
+}
+
+export default async (req) => {
+  const e = exigirClave(req);
+  if (e) return e;
+  const store = getStore("gestion");
+  try {
+    let lista = (await store.get("animales", { type: "json" })) || [];
+    if (req.method === "GET") {
+      lista.forEach(a => { if (a.fotoId) a.fs = firmar(a.fotoId); });
+      return json({ ok: true, animales: lista });
+    }
+    if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
+    const body = await leerJSON(req);
+    if (!body) return json({ error: "JSON inválido" }, 400);
+    if (body.accion === "guardar") {
+      const r = limpiar(body.animal || {});
+      if (r.error) return json({ error: r.error }, 400);
+      const i = lista.findIndex(x => x.id === r.animal.id);
+      if (i >= 0) lista[i] = r.animal; else lista.push(r.animal);
+      await store.setJSON("animales", lista);
+      if (r.animal.fotoId) r.animal.fs = firmar(r.animal.fotoId);
+      return json({ ok: true, animal: r.animal });
+    }
+    if (body.accion === "borrar") {
+      const a = lista.find(x => x.id === body.id);
+      lista = lista.filter(x => x.id !== body.id);
+      await store.setJSON("animales", lista);
+      if (a && a.fotoId) {
+        const fotos = getStore("fotos");
+        await fotos.delete(a.fotoId);
+        await fotos.delete(a.fotoId + "-t");
+      }
+      return json({ ok: true });
+    }
+    return json({ error: "Acción desconocida" }, 400);
+  } catch (err) {
+    return json({ error: "Error en el servidor", detalle: String(err) }, 500);
+  }
+};
