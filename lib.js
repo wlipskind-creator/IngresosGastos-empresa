@@ -1,0 +1,196 @@
+// Lógica pura (sin pantalla): períodos, totales, resultados e indicadores.
+// Se usa en el navegador y también se puede probar en Node.
+(function (root) {
+  'use strict';
+  const pad = n => String(n).padStart(2, '0');
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  function hoy() {
+    const d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function ultimoDiaDelMes(y, m) { return new Date(y, m, 0).getDate(); } // m = 1..12
+
+  // Períodos predefinidos -> {desde, hasta} (null = sin límite)
+  function periodo(nombre, hoyStr) {
+    hoyStr = hoyStr || hoy();
+    const y = Number(hoyStr.slice(0, 4)), m = Number(hoyStr.slice(5, 7));
+    if (nombre === 'mes') return { desde: y + '-' + pad(m) + '-01', hasta: y + '-' + pad(m) + '-' + pad(ultimoDiaDelMes(y, m)) };
+    if (nombre === 'mes-anterior') {
+      const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+      return { desde: py + '-' + pad(pm) + '-01', hasta: py + '-' + pad(pm) + '-' + pad(ultimoDiaDelMes(py, pm)) };
+    }
+    if (nombre === 'anio') return { desde: y + '-01-01', hasta: y + '-12-31' };
+    if (nombre === 'anio-anterior') return { desde: (y - 1) + '-01-01', hasta: (y - 1) + '-12-31' };
+    if (nombre === '12m') {
+      const dy = y - 1, dm = m + 1 > 12 ? 1 : m + 1, dyy = m + 1 > 12 ? y : dy;
+      return { desde: dyy + '-' + pad(dm) + '-01', hasta: y + '-' + pad(m) + '-' + pad(ultimoDiaDelMes(y, m)) };
+    }
+    return { desde: null, hasta: null }; // todo
+  }
+
+  function enPeriodo(m, p) {
+    return (!p.desde || m.fecha >= p.desde) && (!p.hasta || m.fecha <= p.hasta);
+  }
+
+  // Vista de moneda: 'UYU' | 'USD' (solo esa moneda) | 'TODO_USD' | 'TODO_UYU' (convierte con el tipo de cambio)
+  function valor(m, vista, tc) {
+    if (vista === 'UYU' || vista === 'USD') return m.moneda === vista ? m.monto : null;
+    tc = Number(tc) || 1;
+    if (vista === 'TODO_USD') return m.moneda === 'USD' ? m.monto : m.monto / tc;
+    if (vista === 'TODO_UYU') return m.moneda === 'UYU' ? m.monto : m.monto * tc;
+    return null;
+  }
+  function monedaDeVista(vista) { return vista === 'USD' || vista === 'TODO_USD' ? 'USD' : 'UYU'; }
+
+  const r2 = n => Math.round(n * 100) / 100;
+
+  function resumen(movs, vista, tc) {
+    let ing = 0, gas = 0, n = 0;
+    for (const m of movs) {
+      const v = valor(m, vista, tc);
+      if (v === null) continue;
+      n++;
+      if (m.tipo === 'ingreso') ing += v; else gas += v;
+    }
+    return { ingresos: r2(ing), gastos: r2(gas), resultado: r2(ing - gas), n };
+  }
+
+  function porCategoria(movs, tipo, vista, tc) {
+    const mapa = new Map();
+    let total = 0;
+    for (const m of movs) {
+      if (m.tipo !== tipo) continue;
+      const v = valor(m, vista, tc);
+      if (v === null) continue;
+      mapa.set(m.categoria, (mapa.get(m.categoria) || 0) + v);
+      total += v;
+    }
+    return Array.from(mapa.entries())
+      .map(([categoria, t]) => ({ categoria, total: r2(t), pct: total ? t / total : 0 }))
+      .sort((a, b) => b.total - a.total);
+  }
+
+  function siguienteMes(ym) {
+    let y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)) + 1;
+    if (m > 12) { m = 1; y++; }
+    return y + '-' + pad(m);
+  }
+  // Un renglón por mes (también los meses sin movimientos) entre el primero y el último.
+  function porMes(movs, vista, tc) {
+    const filas = new Map();
+    let min = null, max = null;
+    for (const m of movs) {
+      const v = valor(m, vista, tc);
+      if (v === null) continue;
+      const ym = m.fecha.slice(0, 7);
+      if (!min || ym < min) min = ym;
+      if (!max || ym > max) max = ym;
+      const f = filas.get(ym) || { mes: ym, ingresos: 0, gastos: 0 };
+      if (m.tipo === 'ingreso') f.ingresos += v; else f.gastos += v;
+      filas.set(ym, f);
+    }
+    const out = [];
+    if (!min) return out;
+    for (let ym = min; ym <= max; ym = siguienteMes(ym)) {
+      const f = filas.get(ym) || { mes: ym, ingresos: 0, gastos: 0 };
+      out.push({ mes: ym, ingresos: r2(f.ingresos), gastos: r2(f.gastos), resultado: r2(f.ingresos - f.gastos) });
+    }
+    return out;
+  }
+
+  // Resultado por animal: solo los movimientos que se marcaron "para este animal".
+  function porAnimal(movs, animales, vista, tc) {
+    const nombres = new Map(animales.map(a => [a.id, a]));
+    const mapa = new Map();
+    for (const m of movs) {
+      if (!m.animalId) continue;
+      const v = valor(m, vista, tc);
+      if (v === null) continue;
+      const f = mapa.get(m.animalId) || { animalId: m.animalId, gastos: 0, ingresos: 0 };
+      if (m.tipo === 'ingreso') f.ingresos += v; else f.gastos += v;
+      mapa.set(m.animalId, f);
+    }
+    return Array.from(mapa.values()).map(f => ({
+      animalId: f.animalId,
+      animal: nombres.get(f.animalId) || { id: f.animalId, nombre: '(animal eliminado)' },
+      gastos: r2(f.gastos), ingresos: r2(f.ingresos), resultado: r2(f.ingresos - f.gastos)
+    })).sort((a, b) => a.resultado - b.resultado);
+  }
+
+  function cantidadMeses(p, movs) {
+    let d = p.desde, h = p.hasta;
+    if (!d || !h) {
+      const fs = movs.map(m => m.fecha).sort();
+      if (!fs.length) return 0;
+      d = d || fs[0]; h = h || fs[fs.length - 1];
+    }
+    const hoyYm = hoy().slice(0, 7);
+    let hm = h.slice(0, 7); if (hm > hoyYm && p.hasta) hm = hoyYm > d.slice(0, 7) ? hoyYm : d.slice(0, 7);
+    return (Number(hm.slice(0, 4)) - Number(d.slice(0, 4))) * 12 + Number(hm.slice(5, 7)) - Number(d.slice(5, 7)) + 1;
+  }
+
+  function indicadores(movs, animales, p, vista, tc) {
+    const res = resumen(movs, vista, tc);
+    const meses = Math.max(1, cantidadMeses(p, movs));
+    const activos = animales.filter(a => a.estado === 'Activo').length;
+    const cats = porCategoria(movs, 'gasto', vista, tc);
+    return {
+      gastoMensual: r2(res.gastos / meses),
+      ingresoMensual: r2(res.ingresos / meses),
+      meses,
+      animalesActivos: activos,
+      gastoPorCabeza: activos ? r2(res.gastos / activos) : null,
+      mayorGasto: cats[0] || null,
+      margen: res.ingresos > 0 ? res.resultado / res.ingresos : null
+    };
+  }
+
+  // ---------- formatos ----------
+  function fmtNum(n, dec) {
+    const neg = n < 0;
+    const s = Math.abs(n).toFixed(dec === undefined ? 2 : dec);
+    let [ent, fr] = s.split('.');
+    ent = ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (neg ? '-' : '') + ent + (fr ? ',' + fr : '');
+  }
+  function fmtMonto(n, moneda, dec) {
+    const pref = moneda === 'USD' ? 'US$ ' : '$ ';
+    const d = dec !== undefined ? dec : (Math.abs(n) >= 1000 ? 0 : 2);
+    const neg = n < 0;
+    return (neg ? '-' : '') + pref + fmtNum(Math.abs(n), d);
+  }
+  function fechaCorta(f) { return f ? f.slice(8, 10) + '/' + f.slice(5, 7) + '/' + f.slice(0, 4) : ''; }
+  function mesTexto(ym) { return MESES[Number(ym.slice(5, 7)) - 1].slice(0, 3) + ' ' + ym.slice(2, 4); }
+  function mesLargo(ym) { return MESES[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4); }
+
+  function csvCelda(v) {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  // Movimientos en CSV (separador ";", coma decimal: se abre bien en Excel en español).
+  function aCsv(movs, animales) {
+    const nom = new Map(animales.map(a => [a.id, a.nombre]));
+    const filas = [['Fecha', 'Tipo', 'Categoría', 'Detalle', 'Proveedor / Comprador', 'Animal', 'Moneda', 'Monto', 'Cargó']];
+    for (const m of movs.slice().sort((a, b) => (a.fecha < b.fecha ? -1 : 1))) {
+      filas.push([m.fecha, m.tipo === 'gasto' ? 'Gasto' : 'Ingreso', m.categoria, m.detalle, m.contraparte,
+        nom.get(m.animalId) || '', m.moneda, String(m.monto).replace('.', ','), m.por]);
+    }
+    return '﻿' + filas.map(f => f.map(csvCelda).join(';')).join('\r\n');
+  }
+
+  // Lee un monto tal como lo escribe la persona: "1500", "1.500", "1.500,50", "1500.5", "1500,5".
+  function parseMonto(txt) {
+    let s = String(txt || '').replace(/[^\d.,]/g, '');
+    if (!s) return NaN;
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+    const n = Number(s);
+    return isFinite(n) ? n : NaN;
+  }
+
+  const api = { parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
+    fmtNum, fmtMonto, fechaCorta, mesTexto, mesLargo, aCsv, cantidadMeses };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  root.Gestion = api;
+})(typeof window !== 'undefined' ? window : globalThis);
