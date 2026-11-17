@@ -12,8 +12,10 @@ const MONEDAS = ["UYU", "USD"];
 
 function limpiar(m, usuario) {
   const monto = Number(m.monto);
-  if (!(monto > 0) || monto > 1e10) return { error: "El monto tiene que ser mayor a cero" };
-  if (m.tipo !== "gasto" && m.tipo !== "ingreso") return { error: "Tipo inválido" };
+  if (m.tipo !== "gasto" && m.tipo !== "ingreso" && m.tipo !== "ajuste") return { error: "Tipo inválido" };
+  if (m.tipo === "ajuste" || m.tipo === "gasto") { // un gasto puede ser negativo (descuento o devolución); ajuste, con signo
+    if (!(Math.abs(monto) > 0) || Math.abs(monto) > 1e10) return { error: "El monto no puede ser cero" };
+  } else if (!(monto > 0) || monto > 1e10) return { error: "El monto tiene que ser mayor a cero" };
   if (!FECHA_OK.test(m.fecha || "")) return { error: "Fecha inválida" };
   const moneda = MONEDAS.includes(m.moneda) ? m.moneda : "UYU";
   const txt = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
@@ -30,6 +32,10 @@ function limpiar(m, usuario) {
     loteId: ID_OK.test(m.loteId || "") ? m.loteId : "",
     fotoId: ID_OK.test(m.fotoId || "") ? m.fotoId : "",
     por: txt(m.por, 40),
+    ref: txt(m.ref, 20),
+    verificado: m.verificado === true,
+    pagadoPor: txt(m.pagadoPor, 40),
+    tc: Number(m.tc) > 0 && Number(m.tc) < 1e4 ? Math.round(Number(m.tc) * 10000) / 10000 : 0,
     modificadoPor: txt(m.modificadoPor, 40),
     creado: m.creado || new Date().toISOString(),
     modificado: new Date().toISOString()
@@ -96,6 +102,36 @@ export default async (req) => {
       await store.setJSON(key, arr);
       if (mov.fotoId) mov.fs = firmar(mov.fotoId);
       return json({ ok: true, mov });
+    }
+
+    if (body.accion === "importar") {
+      // carga masiva: ids determinísticos, no pisa lo ya cargado (por id ni por ref+fecha+monto)
+      const lista = Array.isArray(body.movs) ? body.movs.slice(0, 200) : [];
+      const ks = await claves(store);
+      const shards = {};
+      const ids = new Set(), huellas = new Set();
+      for (const k of ks) {
+        const arr = (await store.get(k, { type: "json" })) || [];
+        shards[k] = arr;
+        arr.forEach(x => { ids.add(x.id); if (x.ref) huellas.add(x.ref + "|" + x.fecha + "|" + x.monto); });
+      }
+      let creados = 0, salteados = 0; const errores = [];
+      const tocados = new Set();
+      lista.forEach((raw, idx) => {
+        const r = limpiar(raw);
+        if (r.error) { errores.push({ idx, ref: raw && raw.ref, error: r.error }); return; }
+        const mov = r.mov;
+        const h = mov.ref ? mov.ref + "|" + mov.fecha + "|" + mov.monto : "";
+        if (ids.has(mov.id) || (h && huellas.has(h))) { salteados++; return; }
+        const key = "movs-" + mov.fecha.slice(0, 7);
+        (shards[key] = shards[key] || []).push(mov);
+        tocados.add(key); ids.add(mov.id); if (h) huellas.add(h); creados++;
+      });
+      for (const k of tocados) {
+        shards[k].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+        await store.setJSON(k, shards[k]);
+      }
+      return json({ ok: true, creados, salteados, errores });
     }
 
     if (body.accion === "borrar") {
