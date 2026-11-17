@@ -879,7 +879,7 @@
   }
 
   // ---------- panel gráfico ----------
-  const estP = { periodo: 'anio' };
+  const estP = { periodo: 'anio', desde: '', hasta: '' };
   const COLORES = ['#2f6b3a', '#a8742a', '#3d5a80', '#b3402f', '#7a9e7e', '#d4a24c', '#6b7fa3', '#c97b6b', '#8a8a7a'];
   function donaSVG(lista) {
     let acum = 0;
@@ -894,18 +894,27 @@
     const hayUSD = S.movs.some(m => m.moneda === 'USD'), hayUYU = S.movs.some(m => m.moneda === 'UYU');
     if (!estR.vista) estR.vista = hayUSD && hayUYU ? 'TODO_UYU' : hayUSD ? 'USD' : 'UYU';
     app.innerHTML = encabezado('Panel', '#inicio') +
-      '<div class="chips" id="p-per"></div>' +
+      '<div class="chips" id="p-per"></div><div id="p-rango" class="fila" style="gap:10px;margin-bottom:10px"></div>' +
       '<label class="campo">Ver en<select id="p-vista"></select></label><div id="p-cuerpo"></div>' +
       '<a class="btn sec" href="#resultados">Ver el detalle completo en Resultados</a>';
-    const pers = [['mes', 'Este mes'], ['anio', 'Este año'], ['12m', 'Últimos 12 meses'], ['todo', 'Todo']];
+    const pers = [['mes', 'Este mes'], ['mes-anterior', 'Mes anterior'], ['anio', 'Este año'], ['anio-anterior', 'Año anterior'], ['12m', 'Últimos 12 meses'], ['todo', 'Todo'], ['otro', 'Elegir fechas']];
+    const anios = Array.from(new Set(S.movs.map(m => m.fecha.slice(0, 4)))).sort().reverse();
     const vistas = [['UYU', 'Solo pesos ($)'], ['USD', 'Solo dólares (US$)'], ['TODO_UYU', 'Todo en pesos (convertido)'], ['TODO_USD', 'Todo en dólares (convertido)']];
     $('#p-vista').innerHTML = vistas.map(v => '<option value="' + v[0] + '"' + (v[0] === estR.vista ? ' selected' : '') + '>' + v[1] + '</option>').join('');
     $('#p-vista').onchange = ev => { estR.vista = ev.target.value; pintar(); };
     function pintar() {
       $('#p-per').innerHTML = pers.map(p => '<button type="button" class="chip sm' + (estP.periodo === p[0] ? ' on' : '') + '" data-p="' + p[0] + '">' + p[1] + '</button>').join('');
       app.querySelectorAll('#p-per .chip').forEach(b => { b.onclick = () => { estP.periodo = b.dataset.p; pintar(); }; });
+      $('#p-rango').innerHTML = estP.periodo === 'otro'
+        ? '<label class="campo" style="flex:1 1 100%;margin:0">Ejercicio (año completo)<select id="p-anio"><option value="">—</option>' + anios.map(a => '<option value="' + a + '"' + (estP.desde === a + '-01-01' && estP.hasta === a + '-12-31' ? ' selected' : '') + '>' + a + '</option>').join('') + '</select></label>' +
+          '<label class="campo" style="flex:1;margin:0">Desde<input type="date" id="p-d" value="' + esc(estP.desde) + '"></label><label class="campo" style="flex:1;margin:0">Hasta<input type="date" id="p-h" value="' + esc(estP.hasta) + '"></label>' : '';
+      if (estP.periodo === 'otro') {
+        $('#p-anio').onchange = e => { const a = e.target.value; estP.desde = a ? a + '-01-01' : ''; estP.hasta = a ? a + '-12-31' : ''; pintar(); };
+        $('#p-d').onchange = e => { estP.desde = e.target.value; pintar(); };
+        $('#p-h').onchange = e => { estP.hasta = e.target.value; pintar(); };
+      }
       const tc = S.config.tc, v = estR.vista, mon = G.monedaDeVista(v), f = n => G.fmtMonto(n, mon);
-      const per = G.periodo(estP.periodo);
+      const per = estP.periodo === 'otro' ? { desde: estP.desde || null, hasta: estP.hasta || null } : G.periodo(estP.periodo);
       const movs = S.movs.filter(m => G.enPeriodo(m, per));
       const cuerpo = $('#p-cuerpo');
       const res = G.resumen(movs, v, tc);
