@@ -22,8 +22,8 @@ h2 { font-size: 1.15rem; margin: 1.4rem 0 .5rem; }
 .grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grande { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; min-height: 112px; border-radius: var(--r); border: none; font-size: 1.1rem; font-weight: 700; color: #fff; text-decoration: none; text-align: center; cursor: pointer; padding: .8rem; }
 .grande .ico { font-size: 2rem; line-height: 1; }
-.g-gasto { background: var(--rojo); } .g-ingreso { background: var(--verde); }
-.g-animal { background: var(--ocre); } .g-result { background: #3c5a78; }
+.g-gasto { background: var(--c-gasto, var(--rojo)); } .g-ingreso { background: var(--c-ingreso, var(--verde)); }
+.g-animal { background: var(--c-animal, var(--ocre)); } .g-result { background: var(--c-panel, #3c5a78); }
 .g-sec { background: var(--tarjeta); color: var(--texto); border: 1px solid var(--borde); min-height: 64px; flex-direction: row; font-size: 1rem; font-weight: 600; }
 
 .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--r); padding: 14px; margin: 10px 0; }

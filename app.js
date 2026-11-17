@@ -42,11 +42,12 @@
     const color = /^#[0-9a-f]{6}$/i.test(m.color || '') ? m.color : '#2f6b3a';
     const r = document.documentElement.style;
     r.setProperty('--verde', color); r.setProperty('--verde-osc', mezcla(color, 'negro', 0.35)); r.setProperty('--verde-cl', mezcla(color, 'blanco', 0.88));
+    ['gasto', 'ingreso', 'animal', 'panel'].forEach(k => { const v = m.botones && m.botones[k]; if (/^#[0-9a-f]{6}$/i.test(v || '')) r.setProperty('--c-' + k, v); else r.removeProperty('--c-' + k); });
     const nombre = m.nombre || 'Mi cabaña';
     $('#marca').innerHTML = (m.logo ? '<img class="logo-top" alt="" src="' + m.logo + '">' : '🐂 ') + '<span>' + esc(nombre) + '</span>';
     document.title = nombre;
     const tm = document.querySelector('meta[name=theme-color]'); if (tm) tm.content = color;
-    try { localStorage.setItem('gc-marca', JSON.stringify({ nombre, logo: m.logo || '', color })); } catch (e) { /* nada */ }
+    try { localStorage.setItem('gc-marca', JSON.stringify({ nombre, logo: m.logo || '', color, botones: m.botones || {} })); } catch (e) { /* nada */ }
   }
   function marcaGuardada() { try { return JSON.parse(localStorage.getItem('gc-marca') || 'null'); } catch (e) { return null; } }
   async function cargarMarcaPublica() {
@@ -690,6 +691,9 @@
       '<button type="button" class="btn sec mini" id="j-plantilla" style="margin:6px 0 12px">Usar los rubros de invernada</button>' +
       '<div class="campo">Logo (opcional)<div class="logo-edit"><div id="j-logoprev"></div><label class="btn-foto"><input type="file" id="j-logo" accept="image/*"><span>🖼️ Elegir el logo</span></label></div></div>' +
       '<div class="campo">Color de la app<div class="chips" id="j-colores"></div><label class="campo" style="margin-top:8px">O elegí otro color<input type="color" id="j-color" value="' + esc(c.color || '#2f6b3a') + '" style="height:46px;padding:2px"></label></div>' +
+      '<div class="campo">Colores de los botones del inicio<div class="fila" style="gap:10px;flex-wrap:wrap">' +
+        [['gasto', 'Gasto', '#b3402f'], ['ingreso', 'Ingreso', c.color || '#2f6b3a'], ['animal', 'Animales', '#a8742a'], ['panel', 'Panel', '#3c5a78']].map(b => '<label style="flex:1 1 40%;font-size:.85rem">' + b[1] + '<input type="color" class="j-bot" data-k="' + b[0] + '" value="' + esc((c.botones || {})[b[0]] || b[2]) + '" style="height:46px;padding:2px"></label>').join('') +
+        '</div><button type="button" class="btn sec mini" id="j-botrest" style="margin:6px 0 0">Volver a los colores originales</button></div>' +
       '<label class="campo">Tipo de cambio (pesos por dólar) para los resultados "todo en una moneda"<input id="j-tc" type="text" inputmode="decimal" value="' + esc(String(c.tc).replace('.', ',')) + '"></label>' +
       '<label class="campo">Socios (uno por línea, hasta 10). Se usan para saber quién pagó o cobró cada movimiento y para la cuenta entre socios.<textarea id="j-soc" style="min-height:70px">' + esc((c.personas || []).join('\n')) + '</textarea></label>' +
       '<label class="campo">Tipos de gasto (uno por línea)<textarea id="j-cg" style="min-height:170px">' + esc(c.catGasto.join('\n')) + '</textarea></label>' +
@@ -702,13 +706,15 @@
       '<h2>Esta sesión</h2><p class="nota">Cargás como: <b>' + esc(S.quien || '(sin nombre)') + '</b></p>' +
       '<button class="btn sec" type="button" id="j-nombre-q">Cambiar mi nombre</button>' +
       '<button class="btn peligro" type="button" id="j-salir">Salir y olvidar la clave en este teléfono</button>';
-    const est = { logo: c.logo || '', color: c.color || '#2f6b3a' };
+    const est = { logo: c.logo || '', color: c.color || '#2f6b3a', botones: Object.assign({}, c.botones || {}) };
+    app.querySelectorAll('.j-bot').forEach(i => { i.oninput = () => { est.botones[i.dataset.k] = i.value; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color, botones: est.botones }); }; });
+    $('#j-botrest').onclick = () => { est.botones = {}; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color, botones: est.botones }); app.querySelectorAll('.j-bot').forEach(i => { i.value = ({ gasto: '#b3402f', ingreso: est.color, animal: '#a8742a', panel: '#3c5a78' })[i.dataset.k]; }); };
     const PRESET = [['Verde campo', '#2f6b3a'], ['Oliva', '#6b7340'], ['Marrón', '#5a4636'], ['Azul', '#2f4f7a'], ['Bordó', '#7a2f3a'], ['Gris', '#4a5560']];
     function pintarMarcaAj() {
       $('#j-logoprev').innerHTML = est.logo ? '<img class="logo-prev" alt="Logo" src="' + est.logo + '"><br><button type="button" class="btn sec mini" id="j-logoq" style="margin-top:6px">Quitar el logo</button>' : '<span class="nota">Sin logo</span>';
       const q = $('#j-logoq'); if (q) q.onclick = () => { est.logo = ''; pintarMarcaAj(); };
       $('#j-colores').innerHTML = PRESET.map(p => '<button type="button" class="chip sm' + (est.color.toLowerCase() === p[1] ? ' on' : '') + '" data-c="' + p[1] + '"><i class="punto" style="background:' + p[1] + '"></i>' + p[0] + '</button>').join('');
-      app.querySelectorAll('#j-colores .chip').forEach(b => { b.onclick = () => { est.color = b.dataset.c; $('#j-color').value = est.color; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); }; });
+      app.querySelectorAll('#j-colores .chip').forEach(b => { b.onclick = () => { est.color = b.dataset.c; $('#j-color').value = est.color; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color, botones: est.botones }); pintarMarcaAj(); }; });
     }
     pintarMarcaAj();
     $('#j-plantilla').onclick = () => {
@@ -717,10 +723,10 @@
       $('#j-ci').value = ['Venta de hacienda', 'Otros'].join('\n');
       $('#j-lotes').checked = true;
     };
-    $('#j-color').oninput = ev => { est.color = ev.target.value; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); pintarMarcaAj(); };
+    $('#j-color').oninput = ev => { est.color = ev.target.value; aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color, botones: est.botones }); pintarMarcaAj(); };
     $('#j-logo').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
-      try { est.logo = await logoAData(f); pintarMarcaAj(); aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color }); } catch (e) { aviso(e.message, true); }
+      try { est.logo = await logoAData(f); pintarMarcaAj(); aplicarMarca({ nombre: $('#j-nombre').value, logo: est.logo, color: est.color, botones: est.botones }); } catch (e) { aviso(e.message, true); }
       ev.target.value = '';
     };
     $('#f-aj').onsubmit = async ev => {
@@ -731,7 +737,7 @@
       const lineas = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
       const btn = $('#j-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
       try {
-        const r = await api('config', { config: { nombre: $('#j-nombre').value, usaLotes: $('#j-lotes').checked, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: lineas('#j-soc') } });
+        const r = await api('config', { config: { nombre: $('#j-nombre').value, usaLotes: $('#j-lotes').checked, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: lineas('#j-soc'), botones: est.botones } });
         S.config = r.config; aplicarMarca(S.config);
         aviso('Ajustes guardados ✅'); location.hash = '#inicio';
       } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Guardar los ajustes'; }
