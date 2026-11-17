@@ -34,12 +34,39 @@
   }
 
   // Vista de moneda: 'UYU' | 'USD' (solo esa moneda) | 'TODO_USD' | 'TODO_UYU' (convierte con el tipo de cambio)
-  function valor(m, vista, tc) {
+  // Los ajustes entre socios no cuentan como gasto ni ingreso: valor() los deja afuera.
+  // Si el movimiento tiene su propio tipo de cambio (m.tc, el del BCU del día) se usa ese.
+  function valorBruto(m, vista, tc) {
     if (vista === 'UYU' || vista === 'USD') return m.moneda === vista ? m.monto : null;
-    tc = Number(tc) || 1;
+    tc = Number(m.tc) > 0 ? Number(m.tc) : (Number(tc) || 1);
     if (vista === 'TODO_USD') return m.moneda === 'USD' ? m.monto : m.monto / tc;
     if (vista === 'TODO_UYU') return m.moneda === 'UYU' ? m.monto : m.monto * tc;
     return null;
+  }
+  function valor(m, vista, tc) {
+    if (m.tipo === 'ajuste') return null;
+    return valorBruto(m, vista, tc);
+  }
+  // Cuenta entre socios: cada uno suma lo que cobró y resta lo que pagó (y los ajustes).
+  // saldo > 0: tiene de más; saldo < 0: tiene a favor.
+  function cuentaSocios(movs, socios, vista, tc) {
+    const f = new Map(socios.map(n => [n, { socio: n, cobrado: 0, pagado: 0, ajustes: 0 }]));
+    let sinSocio = 0, ing = 0, gas = 0;
+    for (const m of movs) {
+      const v = valorBruto(m, vista, tc);
+      if (v === null) continue;
+      const quien = m.pagadoPor || '';
+      if (m.tipo === 'ajuste') { if (f.has(quien)) f.get(quien).ajustes += v; continue; }
+      if (m.tipo === 'ingreso') ing += v; else gas += v;
+      if (!f.has(quien)) { sinSocio++; continue; }
+      if (m.tipo === 'ingreso') f.get(quien).cobrado += v; else f.get(quien).pagado += v;
+    }
+    const n = socios.length || 1, parte = (ing - gas) / n;
+    const filas = [...f.values()].map(x => {
+      const neto = x.cobrado - x.pagado - x.ajustes;
+      return { socio: x.socio, cobrado: r2(x.cobrado), pagado: r2(x.pagado), ajustes: r2(x.ajustes), neto: r2(neto), saldo: r2(neto - parte) };
+    });
+    return { filas, resultado: r2(ing - gas), parte: r2(parte), sinSocio };
   }
   function monedaDeVista(vista) { return vista === 'USD' || vista === 'TODO_USD' ? 'USD' : 'UYU'; }
 
@@ -172,10 +199,10 @@
   function aCsv(movs, animales, lotes) {
     const nom = new Map(animales.map(a => [a.id, a.nombre]));
     const lot = new Map((lotes || []).map(x => [x.id, x.nombre]));
-    const filas = [['Fecha', 'Tipo', 'Categoría', 'Detalle', 'Proveedor / Comprador', 'Animal', 'Lote', 'Moneda', 'Monto', 'Cargó']];
+    const filas = [['Fecha', 'Tipo', 'Categoría', 'Detalle', 'Proveedor / Comprador', 'Animal', 'Lote', 'Moneda', 'Monto', 'Cargó', 'N° comprobante', 'Verificado', 'Pagó / cobró']];
     for (const m of movs.slice().sort((a, b) => (a.fecha < b.fecha ? -1 : 1))) {
-      filas.push([m.fecha, m.tipo === 'gasto' ? 'Gasto' : 'Ingreso', m.categoria, m.detalle, m.contraparte,
-        nom.get(m.animalId) || '', lot.get(m.loteId) || '', m.moneda, String(m.monto).replace('.', ','), m.por]);
+      filas.push([m.fecha, m.tipo === 'gasto' ? 'Gasto' : m.tipo === 'ajuste' ? 'Ajuste' : 'Ingreso', m.categoria, m.detalle, m.contraparte,
+        nom.get(m.animalId) || '', lot.get(m.loteId) || '', m.moneda, String(m.monto).replace('.', ','), m.por, m.ref || '', m.verificado ? 'Sí' : '', m.pagadoPor || '']);
     }
     return '﻿' + filas.map(f => f.map(csvCelda).join(';')).join('\r\n');
   }
@@ -284,5 +311,6 @@
   const api = { diasEntre, indicadoresLote, normCaravana, leerLecturas, buscarDuplicado, nombreDeLectura, parseMonto, hoy, periodo, enPeriodo, valor, monedaDeVista, resumen, porCategoria, porMes, porAnimal, indicadores,
     fmtNum, fmtMonto, fechaCorta, mesTexto, mesLargo, aCsv, cantidadMeses };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  api.cuentaSocios = cuentaSocios;
   root.Gestion = api;
 })(typeof window !== 'undefined' ? window : globalThis);

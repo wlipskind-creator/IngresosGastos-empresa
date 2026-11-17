@@ -204,11 +204,11 @@
   }
   function filasMov(lista, conAnimal) {
     return lista.map(m =>
-      '<a class="mov" href="#mov/' + esc(m.id) + '"><div class="izq"><div class="cat">' + esc(m.categoria) + '</div>' +
-      '<div class="sub">' + esc(G.fechaCorta(m.fecha)) + (m.detalle ? ' · ' + esc(m.detalle) : '') + (m.contraparte ? ' · ' + esc(m.contraparte) : '') +
-      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + (S.config.usaLotes && m.loteId && nombreLote(m.loteId) ? ' · 📦 ' + esc(nombreLote(m.loteId)) : '') + (m.por ? ' · 👤 ' + esc(m.por) : '') + '</div></div>' +
+      '<a class="mov" href="#mov/' + esc(m.id) + '"><div class="izq"><div class="cat">' + (m.tipo === 'ajuste' ? '🤝 ' : '') + esc(m.categoria) + (m.verificado ? ' <span class="ver" title="Verificado">✔</span>' : '') + '</div>' +
+      '<div class="sub">' + (m.ref ? '#' + esc(m.ref) + ' · ' : '') + esc(G.fechaCorta(m.fecha)) + (m.detalle ? ' · ' + esc(m.detalle) : '') + (m.contraparte ? ' · ' + esc(m.contraparte) : '') +
+      (conAnimal && m.animalId ? ' · 🐂 ' + esc(nombreAnimal(m.animalId)) : '') + (S.config.usaLotes && m.loteId && nombreLote(m.loteId) ? ' · 📦 ' + esc(nombreLote(m.loteId)) : '') + (m.pagadoPor ? ' · 💵 ' + esc(m.pagadoPor) : (m.por ? ' · 👤 ' + esc(m.por) : '')) + '</div></div>' +
       (m.fotoId ? '<img class="miniatura" alt="" loading="lazy" src="' + urlFoto(m.fotoId, m.fs, true) + '">' : '') +
-      '<div class="imp ' + (m.tipo === 'gasto' ? 'g' : 'i') + '">' + (m.tipo === 'gasto' ? '−' : '+') + esc(monto(m)) + '</div></a>').join('');
+      '<div class="imp ' + (m.tipo === 'gasto' && m.monto > 0 ? 'g' : m.tipo === 'gasto' ? 'i' : m.tipo === 'ajuste' ? 'a' : 'i') + '">' + (m.tipo === 'ingreso' ? '+' : (m.tipo === 'gasto' ? m.monto > 0 : m.monto >= 0) ? (m.tipo === 'gasto' ? '−' : '+') : (m.tipo === 'gasto' ? '+' : '−')) + esc(monto(Object.assign({}, m, { monto: Math.abs(m.monto) }))) + '</div></a>').join('');
   }
   function pantallaInicio() {
     const res = resumenMes();
@@ -222,7 +222,7 @@
       '<a class="grande g-result" href="#panel"><span class="ico">📈</span>Panel</a></div>' +
       '<div class="grilla" style="margin-top:12px"><a class="grande g-sec" href="#resultados">📊 Resultados en detalle</a><a class="grande g-sec" href="#movs">📋 Ver todos los movimientos</a></div>' +
       '<div class="grilla" style="margin-top:12px">' +
-      '<a class="grande g-sec" href="#ajustes">⚙️ Ajustes</a></div>' +
+      '<a class="grande g-sec" href="#ajustes">⚙️ Ajustes</a>' + ((S.config.personas || []).length >= 2 ? '<a class="grande g-sec" href="#socios">🤝 Cuenta entre socios</a>' : '') + '</div>' +
       (S.config.usaLotes ? '<a class="grande g-animal" href="#lotes" style="margin-top:12px;display:block"><span class="ico">📦</span>Lotes de hacienda</a>' : '') +
       '<a class="btn sec" href="#ayuda" style="margin-top:12px">❓ Cómo se usa esta app</a>' +
       '<h2>Este mes (' + esc(G.mesLargo(G.hoy().slice(0, 7))) + ')</h2>' +
@@ -246,7 +246,7 @@
 
     app.innerHTML = encabezado((edit ? 'Modificar ' : 'Cargar ') + (esGasto ? 'un gasto' : 'un ingreso'), edit ? '#movs' : '#inicio') +
       '<form id="f-mov">' +
-      '<label class="campo monto">Monto<input id="m-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(m.monto === '' ? '' : String(m.monto).replace('.', ',')) + '"></label>' +
+      '<label class="campo monto">Monto<input id="m-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(m.monto === '' ? '' : String(Math.abs(m.monto)).replace('.', ',')) + '"></label>' + (m.monto < 0 ? '<p class="nota">Este movimiento es un descuento o devolución (resta del gasto).</p>' : '') +
       '<div class="seg ' + (esGasto ? 'rojo' : '') + '" id="m-moneda"><button type="button" data-v="UYU">$ Pesos</button><button type="button" data-v="USD">US$ Dólares</button></div>' +
       '<div class="campo">' + (esGasto ? '¿En qué fue el gasto?' : '¿Qué tipo de ingreso es?') + '<div class="chips" id="m-cats"></div></div>' +
       '<label class="campo">Fecha<input id="m-fecha" type="date" value="' + esc(m.fecha) + '"></label>' +
@@ -257,6 +257,9 @@
         S.lotes.slice().sort((x, y) => (x.estado === 'Activo' ? 0 : 1) - (y.estado === 'Activo' ? 0 : 1) || x.nombre.localeCompare(y.nombre)).map(l => '<option value="' + esc(l.id) + '"' + (l.id === m.loteId ? ' selected' : '') + '>' + esc(l.nombre) + (l.estado !== 'Activo' ? ' (cerrado)' : '') + '</option>').join('') + '</select></label>' : '') +
       '<label class="campo">¿Es para un animal en particular? (opcional)<select id="m-animal"><option value="">No, es un gasto general</option>' +
       animalesOpc.map(a => '<option value="' + esc(a.id) + '"' + (a.id === m.animalId ? ' selected' : '') + '>' + esc(a.nombre) + (a.estado !== 'Activo' ? ' (' + esc(a.estado.toLowerCase()) + ')' : '') + '</option>').join('') + '</select></label>' +
+      ((S.config.personas || []).length ? '<label class="campo">' + (esGasto ? '¿Quién lo pagó?' : '¿Quién cobró?') + '<select id="m-socio"><option value="">—</option>' + S.config.personas.map(n => '<option value="' + esc(n) + '"' + (n === m.pagadoPor ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></label>' : '') +
+      '<label class="campo">N° de comprobante / fila de la planilla vieja (opcional)<input id="m-ref" type="text" autocomplete="off" value="' + esc(m.ref || '') + '"></label>' +
+      '<label class="check" style="border:none"><input type="checkbox" id="m-verif"' + (m.verificado ? ' checked' : '') + '> <span><b>Verificado</b> <span class="nota">(tengo el comprobante y está controlado)</span></span></label>' +
       '<div class="campo">Foto del comprobante (opcional)<label class="btn-foto" id="m-fotobtn"><input type="file" id="m-foto" accept="image/*"><span id="m-fototxt">📷 Sacar o elegir una foto</span></label><div class="foto-prev" id="m-prev"></div></div>' +
       (edit && m.por ? '<p class="nota">Cargado por <b>' + esc(m.por) + '</b>' + (m.creado ? ' el ' + esc(G.fechaCorta(m.creado.slice(0, 10))) : '') + (m.modificadoPor ? ' · última modificación de <b>' + esc(m.modificadoPor) + '</b>' : '') + '.</p>' : '') +
       '<p class="neg" id="m-error"></p>' +
@@ -308,8 +311,9 @@
       ev.preventDefault();
       if (est.guardando) return;
       const err = $('#m-error'); err.textContent = '';
-      const valor = G.parseMonto($('#m-monto').value);
-      if (!(valor > 0)) { err.textContent = 'Escribí el monto.'; $('#m-monto').focus(); return; }
+      const negativo = edit && Number(m.monto) < 0; // descuentos o devoluciones: conservan el signo
+      const valor = G.parseMonto($('#m-monto').value) * (negativo ? -1 : 1);
+      if (!(Math.abs(valor) > 0)) { err.textContent = 'Escribí el monto.'; $('#m-monto').focus(); return; }
       if (!est.categoria) { err.textContent = 'Elegí en qué fue (tocá una de las opciones).'; return; }
       if (!$('#m-fecha').value) { err.textContent = 'Falta la fecha.'; return; }
       est.guardando = true;
@@ -326,7 +330,8 @@
         const nuevo = {
           id: m.id, tipo, fecha: $('#m-fecha').value, monto: valor, moneda: est.moneda, categoria: est.categoria,
           detalle: $('#m-detalle').value, contraparte: $('#m-contra').value, animalId: $('#m-animal').value, loteId: $('#m-lote') ? $('#m-lote').value : (m.loteId || ''), fotoId,
-          por: S.quien, creado: m.creado
+          por: S.quien, creado: m.creado,
+          ref: $('#m-ref').value, verificado: $('#m-verif').checked, pagadoPor: $('#m-socio') ? $('#m-socio').value : (m.pagadoPor || ''), tc: m.tc || 0
         };
         const r = await api('movs', { accion: 'guardar', mov: nuevo });
         const i = S.movs.findIndex(x => x.id === r.mov.id);
@@ -373,7 +378,7 @@
       '<p class="nota" id="f-total"></p>';
     const meses = Array.from(new Set(S.movs.map(m => m.fecha.slice(0, 7)))).sort().reverse();
     $('#f-mes').innerHTML = '<option value="todos">Todos los meses</option>' + meses.map(ym => '<option value="' + ym + '"' + (ym === filtroMovs.mes ? ' selected' : '') + '>' + esc(G.mesLargo(ym)) + '</option>').join('');
-    const tipos = [['todos', 'Todos'], ['gasto', 'Gastos'], ['ingreso', 'Ingresos']];
+    const tipos = [['todos', 'Todos'], ['gasto', 'Gastos'], ['ingreso', 'Ingresos'], ['ajuste', 'Ajustes'], ['sinver', 'Sin verificar']];
     function pintar() {
       $('#f-tipo').innerHTML = tipos.map(t => '<button type="button" class="chip sm' + (filtroMovs.tipo === t[0] ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</button>').join('');
       app.querySelectorAll('#f-tipo .chip').forEach(b => { b.onclick = () => { filtroMovs.tipo = b.dataset.t; pintar(); }; });
@@ -381,8 +386,8 @@
       $('#f-por').innerHTML = quienes.length > 1 ? ['todos'].concat(quienes).map(n => '<button type="button" class="chip sm' + (filtroMovs.por === n ? ' on' : '') + '" data-p="' + esc(n) + '">' + (n === 'todos' ? '👤 Todos' : esc(n)) + '</button>').join('') : '';
       app.querySelectorAll('#f-por .chip').forEach(b => { b.onclick = () => { filtroMovs.por = b.dataset.p; pintar(); }; });
       const q = filtroMovs.texto.trim().toLowerCase();
-      let lista = S.movs.filter(m => (filtroMovs.por === 'todos' || m.por === filtroMovs.por) && (filtroMovs.mes === 'todos' || m.fecha.slice(0, 7) === filtroMovs.mes) && (filtroMovs.tipo === 'todos' || m.tipo === filtroMovs.tipo) &&
-        (!q || [m.categoria, m.detalle, m.contraparte, m.por, nombreAnimal(m.animalId)].join(' ').toLowerCase().includes(q)));
+      let lista = S.movs.filter(m => (filtroMovs.por === 'todos' || m.por === filtroMovs.por) && (filtroMovs.mes === 'todos' || m.fecha.slice(0, 7) === filtroMovs.mes) && (filtroMovs.tipo === 'todos' || (filtroMovs.tipo === 'sinver' ? !m.verificado && m.tipo !== 'ajuste' : m.tipo === filtroMovs.tipo)) &&
+        (!q || [m.categoria, m.detalle, m.contraparte, m.por, m.ref, m.pagadoPor, nombreAnimal(m.animalId)].join(' ').toLowerCase().includes(q)));
       lista.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0));
       $('#f-lista').innerHTML = lista.length ? filasMov(lista.slice(0, 300), true) : '<p class="nota">No hay movimientos con ese filtro.</p>';
       const tot = ['UYU', 'USD'].map(mon => { const r = G.resumen(lista, mon, 1); return r.n ? mon === 'USD' ? 'US$: ' + G.fmtMonto(r.resultado, 'USD') : '$: ' + G.fmtMonto(r.resultado, 'UYU') : ''; }).filter(Boolean);
@@ -686,10 +691,12 @@
       '<div class="campo">Logo (opcional)<div class="logo-edit"><div id="j-logoprev"></div><label class="btn-foto"><input type="file" id="j-logo" accept="image/*"><span>🖼️ Elegir el logo</span></label></div></div>' +
       '<div class="campo">Color de la app<div class="chips" id="j-colores"></div><label class="campo" style="margin-top:8px">O elegí otro color<input type="color" id="j-color" value="' + esc(c.color || '#2f6b3a') + '" style="height:46px;padding:2px"></label></div>' +
       '<label class="campo">Tipo de cambio (pesos por dólar) para los resultados "todo en una moneda"<input id="j-tc" type="text" inputmode="decimal" value="' + esc(String(c.tc).replace('.', ',')) + '"></label>' +
+      '<label class="campo">Socios (uno por línea, hasta 10). Se usan para saber quién pagó o cobró cada movimiento y para la cuenta entre socios.<textarea id="j-soc" style="min-height:70px">' + esc((c.personas || []).join('\n')) + '</textarea></label>' +
       '<label class="campo">Tipos de gasto (uno por línea)<textarea id="j-cg" style="min-height:170px">' + esc(c.catGasto.join('\n')) + '</textarea></label>' +
       '<label class="campo">Tipos de ingreso (uno por línea)<textarea id="j-ci" style="min-height:110px">' + esc(c.catIngreso.join('\n')) + '</textarea></label>' +
       '<p class="nota">Si cambiás el nombre de un tipo, los movimientos ya cargados conservan el nombre anterior.</p>' +
       '<p class="neg" id="j-error"></p><button class="btn" type="submit" id="j-guardar">Guardar los ajustes</button></form>' +
+      '<h2>Carga inicial</h2><p class="nota">Para cargar de una vez los movimientos de una planilla anterior (archivo preparado).</p><a class="btn sec" href="#importarmovs">📥 Importar movimientos históricos</a>' +
       '<h2>Copia de seguridad</h2><p class="nota">Descarga todo lo cargado (movimientos, animales y ajustes) en un archivo. Conviene hacerlo de vez en cuando y guardarlo en el Drive. Las fotos no van en el archivo.</p>' +
       '<button class="btn sec" type="button" id="j-backup">⬇️ Descargar copia de seguridad</button>' +
       '<h2>Esta sesión</h2><p class="nota">Cargás como: <b>' + esc(S.quien || '(sin nombre)') + '</b></p>' +
@@ -724,12 +731,12 @@
       const lineas = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
       const btn = $('#j-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
       try {
-        const r = await api('config', { config: { nombre: $('#j-nombre').value, usaLotes: $('#j-lotes').checked, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: c.personas } });
+        const r = await api('config', { config: { nombre: $('#j-nombre').value, usaLotes: $('#j-lotes').checked, logo: est.logo, color: est.color, tc, catGasto: lineas('#j-cg'), catIngreso: lineas('#j-ci'), personas: lineas('#j-soc') } });
         S.config = r.config; aplicarMarca(S.config);
         aviso('Ajustes guardados ✅'); location.hash = '#inicio';
       } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Guardar los ajustes'; }
     };
-    $('#j-backup').onclick = () => descargar('copia-' + G.hoy() + '.json', JSON.stringify({ fecha: new Date().toISOString(), config: S.config, animales: S.animales, movimientos: S.movs }, null, 1), 'application/json');
+    $('#j-backup').onclick = () => descargar('copia-' + G.hoy() + '.json', JSON.stringify({ fecha: new Date().toISOString(), config: S.config, animales: S.animales, lotes: S.lotes, movimientos: S.movs }, null, 1), 'application/json');
     $('#j-nombre-q').onclick = () => { const n = prompt('¿Cómo te llamás? (así queda anotado quién cargó cada gasto)', S.quien); if (n !== null) { S.quien = n.trim(); LS.set('gc-quien', S.quien); pantallaAjustes(); } };
     $('#j-salir').onclick = () => { if (confirm('¿Salir? La próxima vez vas a tener que ingresar la clave de nuevo.')) cerrarSesion(); };
   }
@@ -958,6 +965,87 @@
     pintar();
   }
 
+  // ---------- ajuste entre socios (solo lectura + borrar) ----------
+  function pantallaAjuste(m) {
+    app.innerHTML = encabezado('Ajuste entre socios', '#movs') +
+      '<div class="tarjeta"><p><b>' + esc(m.categoria) + '</b></p><p>' + (m.monto < 0 ? '−' : '+') + esc(G.fmtMonto(Math.abs(m.monto), m.moneda)) + ' · ' + esc(G.fechaCorta(m.fecha)) + '</p>' +
+      (m.pagadoPor ? '<p>Socio: <b>' + esc(m.pagadoPor) + '</b></p>' : '') + (m.detalle ? '<p>' + esc(m.detalle) + '</p>' : '') + (m.ref ? '<p class="nota">Comprobante de la planilla vieja: #' + esc(m.ref) + '</p>' : '') + '</div>' +
+      '<p class="nota">Un ajuste no es gasto ni ingreso del negocio: solo mueve la cuenta entre los socios. Si está mal, eliminalo y cargalo de nuevo.</p>' +
+      '<button class="btn peligro" type="button" id="a-del">Eliminar este ajuste</button>';
+    $('#a-del').onclick = async () => {
+      if (!confirm('¿Eliminar este ajuste?')) return;
+      try { await api('movs', { accion: 'borrar', id: m.id }); S.movs = S.movs.filter(x => x.id !== m.id); aviso('Ajuste eliminado'); location.hash = '#movs'; } catch (e) { aviso(e.message, true); }
+    };
+  }
+
+  // ---------- cuenta entre socios ----------
+  const estSoc = { vista: 'TODO_USD', hasta: '' };
+  function pantallaSocios() {
+    const socios = S.config.personas || [];
+    app.innerHTML = encabezado('Cuenta entre socios', '#inicio') +
+      '<label class="campo">Mostrar en<select id="s-vista"><option value="TODO_USD">Todo en dólares</option><option value="TODO_UYU">Todo en pesos</option><option value="USD">Solo lo cargado en dólares</option><option value="UYU">Solo lo cargado en pesos</option></select></label>' +
+      '<div id="s-res"></div>' +
+      '<p class="nota">Cada socio suma lo que cobró y resta lo que pagó (más los ajustes). El resultado total se reparte en partes iguales y la diferencia es el saldo: <b>positivo</b> = tiene de más y le debe al otro; <b>negativo</b> = tiene a favor.</p>';
+    $('#s-vista').value = estSoc.vista;
+    function pintar() {
+      const r = G.cuentaSocios(S.movs, socios, estSoc.vista, S.config.tc);
+      const mon = G.monedaDeVista(estSoc.vista);
+      const f = n => esc(G.fmtMonto(n, mon, 2));
+      $('#s-res').innerHTML = '<div class="tarjeta"><div class="cifras"><div class="cifra"><small>Resultado total</small><b class="' + (r.resultado >= 0 ? 'pos' : 'neg') + '">' + f(r.resultado) + '</b></div><div class="cifra"><small>Parte de cada uno</small><b>' + f(r.parte) + '</b></div></div></div>' +
+        r.filas.map(x => '<div class="tarjeta"><h2 style="margin-top:0">' + esc(x.socio) + '</h2>' +
+          '<div class="fila-d"><span>Cobró</span><b>' + f(x.cobrado) + '</b></div><div class="fila-d"><span>Pagó</span><b>' + f(x.pagado) + '</b></div>' +
+          (x.ajustes ? '<div class="fila-d"><span>Ajustes</span><b>' + f(x.ajustes) + '</b></div>' : '') +
+          '<div class="fila-d"><span>Neto</span><b>' + f(x.neto) + '</b></div>' +
+          '<div class="fila-d"><span><b>Saldo</b></span><b class="' + (x.saldo > 0 ? 'neg' : 'pos') + '">' + f(x.saldo) + '</b></div></div>').join('') +
+        (r.sinSocio ? '<p class="nota">' + r.sinSocio + ' movimientos no tienen socio asignado y no entran en la cuenta.</p>' : '');
+    }
+    $('#s-vista').onchange = ev => { estSoc.vista = ev.target.value; pintar(); };
+    pintar();
+  }
+
+  // ---------- importar movimientos históricos (carga inicial) ----------
+  function pantallaImportarMovs() {
+    app.innerHTML = encabezado('Importar movimientos históricos', '#ajustes') +
+      '<p class="nota">Elegí el archivo <b>carga-inicial.json</b>. Antes de cargar nada se muestra un resumen por año para controlarlo. Si se corta, se puede repetir: lo ya cargado se saltea solo.</p>' +
+      '<label class="btn-foto"><input type="file" id="im-arch" accept=".json,application/json"><span>📂 Elegir el archivo</span></label><div id="im-res"></div>';
+    $('#im-arch').onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      let d;
+      try { d = JSON.parse(await f.text()); } catch (e) { $('#im-res').innerHTML = '<p class="neg">El archivo no se pudo leer.</p>'; return; }
+      if (!d || !Array.isArray(d.movs)) { $('#im-res').innerHTML = '<p class="neg">Este archivo no tiene movimientos.</p>'; return; }
+      const ya = new Set(S.movs.map(m => m.id));
+      const nuevos = d.movs.filter(m => !ya.has(m.id));
+      const anios = Array.from(new Set(d.movs.map(m => m.fecha.slice(0, 4)))).sort();
+      const fila = (tit, lista) => { const r = G.resumen(lista, 'TODO_USD', S.config.tc); return '<tr><td>' + tit + '</td><td class="num">' + G.fmtNum(r.ingresos, 0) + '</td><td class="num">' + G.fmtNum(r.gastos, 0) + '</td><td class="num">' + G.fmtNum(r.resultado, 0) + '</td></tr>'; };
+      $('#im-res').innerHTML = '<h2>Resumen (en US$)</h2><div class="tarjeta" style="overflow-x:auto"><table class="tabla"><tr><th>Año</th><th>Ingresos</th><th>Gastos</th><th>Resultado</th></tr>' +
+        anios.map(a => fila(a, d.movs.filter(m => m.fecha.slice(0, 4) === a))).join('') + fila('<b>Total</b>', d.movs) + '</table></div>' +
+        '<p class="nota">' + d.movs.length + ' movimientos en el archivo · ' + d.movs.filter(m => m.tipo === 'ajuste').length + ' ajustes entre socios · ' + d.movs.filter(m => m.verificado).length + ' verificados · ' + (d.lotes || []).length + ' lotes.<br><b>' + nuevos.length + '</b> son nuevos' + (nuevos.length < d.movs.length ? ' (' + (d.movs.length - nuevos.length) + ' ya estaban cargados)' : '') + '.</p>' +
+        '<p class="neg" id="im-err"></p><button class="btn" type="button" id="im-go"' + (nuevos.length || (d.lotes || []).length ? '' : ' disabled') + '>Importar ahora</button>';
+      $('#im-go').onclick = async () => {
+        const btn = $('#im-go'); btn.disabled = true;
+        try {
+          btn.textContent = 'Preparando ajustes…';
+          const c = S.config, une = (a, b, n) => Array.from(new Set((a || []).concat(b || []))).slice(0, n);
+          const cfg = Object.assign({}, c, { personas: une(c.personas, d.socios, 10), catGasto: une(c.catGasto, (d.categorias || {}).gasto, 40), catIngreso: une(c.catIngreso, (d.categorias || {}).ingreso, 40), usaLotes: c.usaLotes || (d.lotes || []).length > 0 });
+          S.config = (await api('config', { config: cfg })).config;
+          const lotes = d.lotes || [];
+          for (let i = 0; i < lotes.length; i++) { btn.textContent = 'Lotes ' + (i + 1) + ' de ' + lotes.length + '…'; await api('lotes', { accion: 'guardar', lote: lotes[i] }); }
+          let creados = 0, salteados = 0;
+          const por = S.quien || 'Carga inicial';
+          for (let i = 0; i < d.movs.length; i += 100) {
+            btn.textContent = 'Movimientos ' + Math.min(i + 100, d.movs.length) + ' de ' + d.movs.length + '…';
+            const r = await api('movs', { accion: 'importar', movs: d.movs.slice(i, i + 100).map(m => Object.assign({ por }, m)) });
+            creados += r.creados; salteados += r.salteados;
+            if (r.errores && r.errores.length) throw new Error('Hay movimientos con error (#' + (r.errores[0].ref || '?') + '): ' + r.errores[0].error);
+          }
+          const [m2, l2] = await Promise.all([api('movs'), api('lotes')]);
+          S.movs = m2.movs; S.lotes = l2.lotes;
+          $('#im-res').innerHTML = '<div class="ok-grande"><div class="tilde">✅</div><h1>Listo</h1><p>' + creados + ' movimientos cargados' + (salteados ? ' · ' + salteados + ' ya estaban' : '') + '.</p></div><a class="btn" href="#resultados">Ver resultados</a><a class="btn sec" href="#socios">Ver cuenta entre socios</a>';
+        } catch (e) { $('#im-err').textContent = 'Se cortó: ' + e.message + '. Tocá de nuevo "Importar ahora": lo ya cargado se saltea.'; btn.disabled = false; btn.textContent = 'Importar ahora'; }
+      };
+    };
+  }
+
   // ---------- ayuda ----------
   function pantallaAyuda() {
     LS.set('gc-ayuda-vista', '1');
@@ -971,6 +1059,7 @@
       paso('📋', 'Animales', '<p>Tocá <b>Animales → Agregar un animal</b> y completá nombre, especie y lo que sepas (caravana, raza, nacimiento, foto). Tocando un animal se ven sus gastos e ingresos y se puede cambiar su estado: en el campo, vendido o fallecido.</p>') +
       (S.config.usaLotes ? paso('📦', 'Lotes de hacienda', '<p>Un <b>lote</b> es un grupo de animales que entró junto. Tocá <b>Lotes de hacienda → Agregar un lote</b> y poné cuántos son, la fecha y el peso promedio de entrada. Cada tanto agregá una <b>pesada</b> (cuántos pesaste y el promedio). Al cargar un gasto o un ingreso, elegí a qué lote pertenece. En la ficha del lote ves la ganancia diaria de peso, el costo por kilo ganado y el resultado por animal.</p>') : '') +
       paso('📥', 'Cargar muchos animales de una vez', '<p>Si tenés el archivo (TXT o CSV) que sale del lector de caravanas, entrá a <b>Animales → Importar lecturas del bastón</b>. Elegí el archivo o pegá la lista de números. La app te muestra cuántos son nuevos y cuáles <b>ya existen</b> (esos se saltean, no se duplican) y recién ahí los das de alta.</p>') +
+      ((S.config.personas || []).length >= 2 ? paso('🤝', 'Socios, comprobantes verificados y ajustes', '<p>En cada gasto o ingreso se anota <b>quién lo pagó o cobró</b>, el <b>n° de comprobante</b> (para ubicarlo en la planilla vieja) y si está <b>verificado</b> (✔). En <b>Ver todos los movimientos</b> el filtro <b>Sin verificar</b> muestra lo pendiente.</p><p><b>Cuenta entre socios</b> (en el inicio) muestra cuánto cobró y pagó cada uno y el saldo para quedar parejos. Los <b>ajustes</b> (🤝) son netos entre socios: mueven la cuenta pero no cuentan como gasto ni ingreso.</p>') : '') +
       paso('✏️', 'Me equivoqué, ¿cómo lo corrijo?', '<p>Entrá a <b>Ver todos los movimientos</b>, tocá el que querés cambiar y corregilo, o tocá <b>Eliminar</b> al final. Se puede buscar por palabra o filtrar por mes.</p>') +
       paso('📈', 'El Panel', '<p>Es la pantalla para ver cómo viene todo de un vistazo: si hay ganancia o pérdida, en qué se va la plata, cómo fue cada mes y cómo le fue a cada animal. Elegí arriba el período que querés mirar.</p>') +
       paso('📊', 'Resultados en detalle', '<p>Elegí el período (este mes, este año, últimos 12 meses…) y se ve cuánto entró, cuánto salió y el <b>resultado</b>. Más abajo: en qué se gasta más, de dónde vienen los ingresos, mes a mes y el resultado de cada animal.</p><p>Si hay pesos y dólares, se puede ver todo convertido a una sola moneda. El tipo de cambio se ajusta en <b>Ajustes</b>.</p>') +
@@ -992,7 +1081,9 @@
     window.scrollTo(0, 0);
     switch (partes[0]) {
       case 'gasto': case 'ingreso': pantallaMov(partes[0], null, q.get('animal') || '', q.get('lote') || ''); break;
-      case 'mov': { const m = S.movs.find(x => x.id === partes[1]); if (m) pantallaMov(m.tipo, m); else location.hash = '#movs'; break; }
+      case 'socios': pantallaSocios(); break;
+      case 'importarmovs': pantallaImportarMovs(); break;
+      case 'mov': { const m = S.movs.find(x => x.id === partes[1]); if (m && m.tipo === 'ajuste') pantallaAjuste(m); else if (m) pantallaMov(m.tipo, m); else location.hash = '#movs'; break; }
       case 'movs': pantallaMovs(); break;
       case 'animales': pantallaAnimales(); break;
       case 'lotes': pantallaLotes(); break;

@@ -129,3 +129,11 @@ table.t th:first-child, table.t td:first-child { text-align: left; }
 details.tarjeta summary { cursor: pointer; padding: 4px 0; }
 .lote-tj { display: block; text-decoration: none; color: inherit; }
 .lote-tj .t { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 1.1rem; margin-bottom: 4px; }
+
+/* v8: verificado, ajustes, cuenta entre socios */
+.ver { color: var(--verde); font-weight: 700; }
+.mov .imp.a { color: var(--suave); }
+.fila-d { display: flex; justify-content: space-between; padding: 4px 0; }
+.tabla { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.tabla th, .tabla td { padding: 6px 6px; border-bottom: 1px solid var(--borde); text-align: left; }
+.tabla .num, .tabla th:not(:first-child) { text-align: right; white-space: nowrap; }
